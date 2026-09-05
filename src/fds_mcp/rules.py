@@ -285,6 +285,13 @@ def rule_api_law_gap(req: dict) -> list[Finding]:
 
     For submit_via=api a mismatch is a hard error; for submit_via=web_form it is only a
     hint, because ``?law_type=...`` picks the legal basis correctly there.
+
+    A draft that declares ``law.narrow_after_submit`` with ``full_text`` is the third
+    case: it files under the meta act on purpose and corrects the record with a PATCH
+    afterwards. Keeping this at ERROR would make that route unreachable, because
+    submit_request() rejects every ERROR in gate 2 before gate 3 ever runs. The real
+    checking of the route happens there — the combined set and the shared deadline are
+    conditions this offline rule cannot see.
     """
     law = req.get("law") or {}
     via = req.get("submit_via", "web_form")
@@ -292,11 +299,14 @@ def rule_api_law_gap(req: dict) -> list[Finding]:
         return []
     if law["wunsch_id"] == law["api_default_id"]:
         return []
-    level = Level.ERROR if via == "api" else Level.INFO
+    narrowing = bool(law.get("narrow_after_submit")) and bool(req.get("full_text"))
+    level = Level.ERROR if via == "api" and not narrowing else Level.INFO
+    detail = (" Draft declares narrow_after_submit with full_text; gate 3 checks the "
+              "route." if narrowing else "")
     return [Finding("R12-api-cannot-set-law", level,
                     f"Desired law {law['wunsch_id']} != API default {law['api_default_id']}. "
                     "POST /api/v1/request/ would set the wrong legal basis; "
-                    f"submit_via={via!r}.")]
+                    f"submit_via={via!r}.{detail}")]
 
 
 @offline_rule("R13-status-gate")

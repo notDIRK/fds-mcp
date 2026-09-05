@@ -139,6 +139,31 @@ def test_r12_web_form_route_is_only_a_hint(valid_request):
     assert "R12-api-cannot-set-law" not in err_ids(findings)
 
 
+def test_r12_narrowing_route_is_not_an_error(valid_request):
+    """The narrowing route exists for exactly this case, so R12 must not block it.
+
+    Gate 2 rejects every ERROR before gate 3 ever runs. As long as R12 fires at ERROR
+    for a draft that declares ``narrow_after_submit`` with ``full_text``, the route
+    implemented in check_law_gate() is unreachable through submit_request().
+    """
+    valid_request["submit_via"] = "api"
+    valid_request["full_text"] = True
+    valid_request["body"] = ("Sehr geehrte Damen und Herren,\n\nnach dem LTranspG "
+                             "beantrage ich Zugang.\n\nMit freundlichen Gruessen")
+    valid_request["law"]["narrow_after_submit"] = True
+    findings = R.run_offline(valid_request)
+    assert "R12-api-cannot-set-law" in ids(findings)
+    assert "R12-api-cannot-set-law" not in err_ids(findings)
+
+
+def test_r12_narrowing_without_full_text_stays_an_error(valid_request):
+    """Without full_text the meta act's letter_start reaches the authority anyway."""
+    valid_request["submit_via"] = "api"
+    valid_request["full_text"] = False
+    valid_request["law"]["narrow_after_submit"] = True
+    assert "R12-api-cannot-set-law" in err_ids(R.run_offline(valid_request))
+
+
 def test_r13_unknown_status(valid_request):
     valid_request["status"] = "irgendwas"
     assert "R13-status-gate" in err_ids(R.run_offline(valid_request))
