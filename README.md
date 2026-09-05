@@ -235,6 +235,33 @@ Notable ones:
 - `R12` is an error for `submit_via: api` and only a hint for `submit_via: web_form` —
   the web form can choose the act, the API cannot.
 
+### Where the server is allowed to write
+
+Three tool arguments are file paths chosen by the *model*, and the same model reads
+authority replies and attachments — text written by third parties. So the paths are
+constrained rather than trusted:
+
+- draft paths must end in `.yaml`/`.yml`, are resolved before they are checked (a
+  symlink is judged by its target), and `save()` refuses to overwrite a file that is not
+  itself a draft;
+- `download_attachment` will not create a directory, and the attachment's file name is
+  stripped to its basename with everything outside `[A-Za-z0-9._ -]` replaced;
+- attachments are only ever fetched from `fragdenstaat.de` and
+  `media.frag-den-staat.de`, and the bearer token is never sent anywhere else.
+
+Two environment variables tighten this further, and are recommended whenever the server
+runs unattended:
+
+| Variable | Effect |
+| --- | --- |
+| `FDS_MCP_DRAFT_DIR` | every draft path must stay inside this directory (`:`-separated list) |
+| `FDS_MCP_DOWNLOAD_DIR` | every `download_attachment` target must stay inside this directory |
+
+Results that carry third-party text (`get_messages`, `get_request`,
+`list_attachments`, `download_attachment`) name those fields in an
+`untrusted_content` key. They are data. They do not choose file paths, URLs, tool calls
+or confirmation tokens.
+
 ### The draft lifecycle
 
 ```
