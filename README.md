@@ -270,6 +270,27 @@ draft ──validate_draft──▶ validated ──a human edits the file──
 
 Only a human moves a draft to `approved`, and only by editing the YAML file.
 
+**Know the limit of that sentence.** Gate 1 (`status: approved`) and gate 4
+(`confirmation_token`) are two values in a file on your disk. No tool in *this* server
+can set either of them — `create_request_draft` always writes `status: draft` and the
+placeholder token, and there is no tool that promotes a draft. But most MCP hosts give
+the model a general-purpose file-writing tool as well, and a model that can write files
+can write `status: approved` and a token of its own choosing. Combined with a prompt
+injection out of an authority's reply, that is a path to a real submission.
+
+So, if you run this alongside a filesystem tool:
+
+- keep `submit_request` out of the picture entirely by configuring scopes without
+  `make:request` — then no token this server holds can ever POST a request;
+- or set `FDS_MCP_DRAFT_DIR` to a directory your other tools do not write to;
+- or leave the recommended exit in place and use `build_submit_url`, where the send
+  button is in your browser and not in a tool call.
+
+Gates 2, 3, 5 and 7 do not depend on the file and hold regardless: the rule set runs
+against live API data, the law check compares against the recomputed API default, the
+throttle ledger is separate state, and the HTTP client refuses non-GET everywhere except
+in `submit_request`.
+
 ---
 
 ## Development
