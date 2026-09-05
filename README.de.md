@@ -94,8 +94,15 @@ alle fünf unabhängigen Gates zustimmen — siehe [Sicherheitsmodell](#sicherhe
 ## Installation
 
 ```bash
-pip install git+https://github.com/notDIRK/fds-mcp.git
+pip install fds-mcp
 ```
+
+Oder ganz ohne Installation, direkt aus PyPI:
+
+```bash
+uvx fds-mcp serve
+```
+
 
 Oder aus einem Checkout:
 
@@ -123,6 +130,19 @@ Für einen Client mit JSON-Konfiguration:
     "fds": {
       "command": "fds-mcp",
       "args": ["serve"]
+    }
+  }
+}
+```
+
+Oder ohne jede Installation:
+
+```json
+{
+  "mcpServers": {
+    "fds": {
+      "command": "uvx",
+      "args": ["fds-mcp", "serve"]
     }
   }
 }

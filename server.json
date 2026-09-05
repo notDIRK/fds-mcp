@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.notDIRK/fds-mcp",
+  "title": "FragDenStaat",
+  "description": "Freedom-of-information requests for Germany via FragDenStaat.de, the froide FOI portal.",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/notDIRK/fds-mcp",
+  "repository": {
+    "url": "https://github.com/notDIRK/fds-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "fds-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "FDS_MCP_BASE_URL",
+          "description": "Which froide instance to use. Defaults to https://fragdenstaat.de",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "https://fragdenstaat.de"
+        },
+        {
+          "name": "FDS_TOKEN",
+          "description": "OAuth bearer token. Only needed for the tools that read your own requests or submit one; the four search tools work without it.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

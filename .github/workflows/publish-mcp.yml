@@ -1,0 +1,61 @@
+# Announces the release to the official MCP Registry.
+#
+# Separate from release.yml on purpose: the registry only stores metadata and verifies
+# that the PyPI package really carries the "mcp-name:" marker, so it can only run once
+# the package is on PyPI. Splitting the two also means a registry hiccup never blocks
+# the actual release, and lets this be re-run on its own.
+#
+# Authentication is OIDC, matched against the io.github.<owner>/ namespace in
+# server.json. No token.
+name: Publish to MCP Registry
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Refuse to announce a version that is not the one in server.json
+        run: |
+          set -euo pipefail
+          want=$(jq -r .version server.json)
+          pkg=$(jq -r '.packages[0].version' server.json)
+          [ "$want" = "$pkg" ] || { echo "::error::server.json version $want != package $pkg"; exit 1; }
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            [ "$tag" = "$want" ] || { echo "::error::tag $tag != server.json $want"; exit 1; }
+          fi
+          echo "version $want"
+
+      - name: Wait for the package to be visible on PyPI
+        run: |
+          set -euo pipefail
+          v=$(jq -r .version server.json)
+          for i in $(seq 1 30); do
+            if curl -sf "https://pypi.org/pypi/fds-mcp/$v/json" > /dev/null; then
+              echo "fds-mcp $v is on PyPI"; exit 0
+            fi
+            echo "not there yet ($i/30)"; sleep 10
+          done
+          echo "::error::fds-mcp $v never appeared on PyPI"; exit 1
+
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version || true
+
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
