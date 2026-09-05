@@ -12,7 +12,7 @@ from fds_mcp.client import FdsError
 
 GREEN = ["search_authorities", "get_authority", "get_law", "check_jurisdiction"]
 YELLOW = ["list_my_requests", "get_request", "get_messages", "list_attachments",
-          "download_attachment", "check_deadlines"]
+          "download_attachment", "check_deadlines", "build_reply_draft"]
 RED = ["create_request_draft", "validate_draft", "build_submit_url", "submit_request"]
 
 
@@ -21,8 +21,10 @@ def registered_tools():
     return asyncio.run(server.mcp.list_tools())
 
 
-def test_all_fourteen_tools_are_registered():
+def test_all_fifteen_tools_are_registered():
+    """The browser sender is deliberately absent: it needs FDS_MCP_BROWSER_SEND=1."""
     assert {tool.name for tool in registered_tools()} == set(GREEN + YELLOW + RED)
+    assert len(GREEN + YELLOW + RED) == 15
 
 
 def test_every_tool_has_a_description():

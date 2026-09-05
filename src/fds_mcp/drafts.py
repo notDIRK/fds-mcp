@@ -50,6 +50,28 @@ _HEADER = """\
 """
 
 
+_REPLY_HEADER = """\
+# FragDenStaat reply draft — created by fds-mcp. NOTHING HAS BEEN SENT.
+#
+# This is a follow-up message to an authority on an existing request. It cannot be sent
+# through the API: POST /api/v1/message/ refuses kind="email", and the web view at
+# /anfrage/<slug>/send/message/ ignores OAuth bearer tokens entirely (both measured
+# 2026-09-05, see tests/test_api_contract.py). The normal way out is to open send_url,
+# paste the text below, and press send yourself.
+#
+# Unlike a request, a follow-up is NOT framed by froide: salutation and closing formula
+# have to stand in the text, exactly once each (rule R19).
+#
+# send_address stays false. The web form carries your postal address prefilled behind a
+# "Adresse mitsenden" checkbox; on a public request, ticking it publishes where you live.
+#
+# State machine: draft -> validated -> approved -> sent
+# Replace the confirmation_token yourself. A tool must not invent it for you.
+"""
+
+REPLY_STATES = ("draft", "validated", "approved", "sent")
+
+
 class DraftError(FdsMcpError):
     """Malformed draft file, forbidden path, or an illegal state transition."""
 
@@ -108,9 +130,58 @@ def new_draft(
     return draft
 
 
+def new_reply_draft(
+    *,
+    request_id: int,
+    request_title: str,
+    request_slug: str,
+    subject: str,
+    body: str,
+    send_url: str,
+    request_url: str | None = None,
+    request_public: bool = True,
+    publicbody_id: int | None = None,
+    publicbody_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a follow-up draft. Pure data — no I/O, no network.
+
+    ``kind: reply`` is what tells every consumer that this file is not a request:
+    a different rule set applies (``rules.run_reply``), a different exit
+    (``send_url`` in a browser), and a different terminal state (``sent``).
+    """
+    return {
+        "kind": "reply",
+        "status": "draft",
+        "meta": {
+            "created": dt.date.today().isoformat(),
+            "generator": "fds-mcp",
+        },
+        "request": {
+            "id": int(request_id),
+            "title": request_title,
+            "slug": request_slug,
+            "url": request_url,
+            "public": bool(request_public),
+        },
+        "publicbody": {"id": publicbody_id, "name": publicbody_name},
+        "subject": subject.strip(),
+        "body": body,
+        "send_url": send_url,
+        # The "Adresse mitsenden" checkbox in the web form. Never flipped by a tool.
+        "send_address": False,
+        "confirmation_token": CONFIRMATION_PLACEHOLDER,
+        "findings": [],
+    }
+
+
+def is_reply(draft: dict[str, Any]) -> bool:
+    return str(draft.get("kind") or "").strip().lower() == "reply"
+
+
 def dump(draft: dict[str, Any]) -> str:
-    return _HEADER + yaml.safe_dump(draft, allow_unicode=True, sort_keys=False,
-                                    default_flow_style=False, width=100)
+    header = _REPLY_HEADER if is_reply(draft) else _HEADER
+    return header + yaml.safe_dump(draft, allow_unicode=True, sort_keys=False,
+                                   default_flow_style=False, width=100)
 
 
 def save(draft: dict[str, Any], path: str | Path) -> Path:
@@ -139,8 +210,9 @@ def load(path: str | Path) -> dict[str, Any]:
 
 
 def set_status(draft: dict[str, Any], status: str) -> dict[str, Any]:
-    if status not in DRAFT_STATES:
-        raise DraftError(f"Unknown status {status!r}; allowed: {DRAFT_STATES}")
+    allowed = REPLY_STATES if is_reply(draft) else DRAFT_STATES
+    if status not in allowed:
+        raise DraftError(f"Unknown status {status!r}; allowed: {allowed}")
     draft["status"] = status
     return draft
 
@@ -215,10 +287,15 @@ def _looks_like_a_draft(target: Path) -> bool:
         text = target.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
-    if text.lstrip().startswith("# FragDenStaat request draft"):
+    stripped = text.lstrip()
+    if stripped.startswith(("# FragDenStaat request draft", "# FragDenStaat reply draft")):
         return True
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError:
         return False
-    return isinstance(data, dict) and "subject" in data and "publicbody" in data
+    if not isinstance(data, dict):
+        return False
+    if is_reply(data) and "body" in data and "request" in data:
+        return True
+    return "subject" in data and "publicbody" in data

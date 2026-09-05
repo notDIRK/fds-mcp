@@ -471,6 +471,109 @@ def rule_full_text_self_contained(req: dict) -> list[Finding]:
     return out
 
 
+# --- follow-up rules: a reply is not framed --------------------------------
+#
+# A new request is assembled by construct_initial_message_body() and wrapped in the act's
+# letter_start/letter_end. A follow-up message is not. The textarea at
+# /anfrage/<slug>/send/message/ arrives prefilled with
+#
+#     Guten Tag,\n\n…\n\nMit freundlichen Grüßen\n<name>
+#
+# and whatever stands in it is exactly what the authority receives. So the rule that
+# forbids a salutation in a request body (R10) inverts here: R19 *requires* one.
+#
+# Measured 2026-09-05 (tests/test_api_contract.py): this text cannot be sent through the
+# API at all. POST /api/v1/message/ refuses kind="email", and the web view ignores bearer
+# tokens. These rules therefore validate something a human will paste, not something this
+# server will send.
+
+REPLY_RULES: list[tuple[str, Callable[[dict], list[Finding]]]] = []
+
+
+def reply_rule(rule_id: str):
+    def deco(fn):
+        REPLY_RULES.append((rule_id, fn))
+        return fn
+    return deco
+
+
+def count_salutations(text: str) -> int:
+    return len(SALUTATION_RE.findall(text))
+
+
+def count_closings(text: str) -> int:
+    return len(CLOSING_RE.findall(text))
+
+
+@reply_rule("R19-reply-needs-salutation")
+def rule_reply_needs_salutation(reply: dict) -> list[Finding]:
+    """A follow-up needs a salutation and a closing formula, each exactly once.
+
+    Missing, because nothing frames the text: the authority would receive a bare
+    paragraph with no greeting and no sender.
+
+    Twice, because that is what happens when a greeting is written on top of the
+    prefilled one — the classic doubled letter, and the same failure R10 prevents from
+    the other direction.
+    """
+    text = _body(reply)
+    out: list[Finding] = []
+    for count, what, hint in (
+        (count_salutations(text), "salutation",
+         'e.g. "Guten Tag," or "Sehr geehrte Damen und Herren,"'),
+        (count_closings(text), "closing formula",
+         'e.g. "Mit freundlichen Grüßen" followed by your name'),
+    ):
+        if count == 0:
+            out.append(Finding("R19-reply-needs-salutation", Level.ERROR,
+                               f"The reply has no {what}. froide does not frame a "
+                               f"follow-up message — {hint}."))
+        elif count > 1:
+            out.append(Finding("R19-reply-needs-salutation", Level.ERROR,
+                               f"The reply contains {count} instances of a {what}; "
+                               "exactly one is expected. Check that a greeting was not "
+                               "written on top of the prefilled one."))
+    return out
+
+
+def _reply_subject_length(reply: dict) -> list[Finding]:
+    """Upper bound only.
+
+    The 230 characters are ``MAX_SUBJECT_LENGTH`` from froide's *request* form, not a
+    measured limit of the reply form. It is the ceiling we know is safe; a reply subject
+    may legitimately be short, so there is no lower bound here.
+    """
+    subject = reply.get("subject")
+    if subject is None:
+        return []
+    subject = str(subject).strip()
+    if len(subject) > MAX_SUBJECT_LENGTH:
+        return [Finding("R01-subject-length", Level.ERROR,
+                        f"Subject has {len(subject)} characters, at most "
+                        f"{MAX_SUBJECT_LENGTH} are allowed.")]
+    return []
+
+
+# Rules that apply to a follow-up unchanged: the same body limits, the same placeholder
+# rejection, the same PII rule. R04 matters more here than anywhere else — the reply form
+# is prefilled with the placeholder U+2026 and sending it as-is is a live risk, not a
+# theoretical one.
+REPLY_RULES.extend([
+    ("R01-subject-length", _reply_subject_length),
+    ("R03-body-length", rule_body_length),
+    ("R04-placeholder", rule_placeholder),
+    ("R06-pii", rule_pii),
+])
+
+
+def run_reply(reply: dict) -> list[Finding]:
+    """Validate a follow-up message. Expects ``body`` and optionally ``subject``."""
+    out: list[Finding] = []
+    for _rid, fn in REPLY_RULES:
+        out.extend(fn(reply))
+    return out
+
+
 # --- live rules (need the network) ---------------------------------------
 
 @live_rule("L01-publicbody-exists")

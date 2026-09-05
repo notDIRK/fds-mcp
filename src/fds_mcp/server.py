@@ -1,4 +1,4 @@
-"""The MCP server: twelve tools in three safety tiers.
+"""The MCP server: fifteen tools in three safety tiers.
 
   green   no authentication, no side effects   — pure research
   yellow  OAuth token, read only               — your own requests, messages, files
@@ -524,6 +524,136 @@ def check_deadlines() -> dict:
     }
 
 
+# --------------------------------------------------------------------------
+# replying to an authority — preparation only
+# --------------------------------------------------------------------------
+
+# The subject froide itself prefills into the reply form, observed 2026-09-05.
+REPLY_SUBJECT_TEMPLATE = "AW: {title} [#{request_id}]"
+
+# The anchor of the reply form on a request page, taken from the "Nachricht versenden"
+# link in the logged-in page (accessibility snapshot, 2026-09-05). Plural — the form is
+# inside a #write-messages section.
+REPLY_ANCHOR = "write-messages"
+
+ADDRESS_CHECKBOX_WARNING = (
+    "The reply form carries your postal address PREFILLED, behind a checkbox labelled "
+    "'Adresse mitsenden'. Leave that checkbox unticked unless the authority has "
+    "explicitly asked for your postal address. On a public request, ticking it attaches "
+    "your home address to a message that is published under CC0 and cannot be recalled."
+)
+
+
+@mcp.tool()
+def build_reply_draft(request_id: int, text: str, subject: str | None = None,
+                      path: str | None = None) -> dict:
+    """Prepare a follow-up message to an authority. YELLOW: reads the API, sends nothing.
+
+    The counterpart of ``build_submit_url`` for a request that already exists. It looks
+    the request up, validates the text against the rules that apply to a follow-up, and
+    hands back the finished text plus the URL of the form. **Pressing send stays with
+    you**, and there is no tool argument that changes that: replying is not possible
+    through the API at all. Measured 2026-09-05 (tests/test_api_contract.py):
+    ``POST /api/v1/message/`` refuses ``kind: "email"``, and the web view at
+    ``/anfrage/<slug>/send/message/`` answers 302 to the login page whether or not a
+    bearer token is attached.
+
+    A follow-up is validated differently from a request. froide does **not** frame it:
+    the textarea arrives prefilled with a salutation, the placeholder U+2026 and a
+    closing formula, and exactly what stands in it is what the authority receives. So
+    R19 requires a salutation and a closing formula — the inverse of R10 — R04 rejects
+    the placeholder that is sitting in the form right now, R06 keeps e-mail addresses and
+    IBANs out of a public thread, and the subject is capped at 230 characters.
+
+    Args:
+        request_id: numeric id of your existing request.
+        text: the complete message, salutation and closing formula included.
+        subject: reply subject. Defaults to "AW: <title> [#<id>]".
+        path: optional path to a ``.yaml`` file to write the draft to. Needed only if you
+            intend to use ``send_reply_via_browser`` later; the file is written with
+            ``status: draft`` and a placeholder confirmation token.
+    """
+    with token_client() as client:
+        req = client.get_request(int(request_id))
+
+    slug = str(req.get("slug") or "").strip() or _slug_from_url(req.get("url"))
+    if not slug:
+        raise FdsError(
+            f"Request {request_id} has neither a 'slug' nor a parsable 'url' in the API "
+            "response, so the address of the reply form cannot be derived. Open the "
+            "request in the browser instead."
+        )
+    title = str(req.get("title") or "").strip()
+    public = bool(req.get("public", True))
+    pb = req.get("public_body") if isinstance(req.get("public_body"), dict) else {}
+
+    proposed_subject = (subject if subject is not None else
+                        REPLY_SUBJECT_TEMPLATE.format(title=title, request_id=int(request_id)))
+    reply = {"subject": proposed_subject, "body": text}
+    findings = rules.run_reply(reply)
+    errs = rules.errors(findings)
+    send_url = f"{BASE_URL}/anfrage/{slug}/#{REPLY_ANCHOR}"
+
+    result: dict[str, Any] = {
+        "request_id": int(request_id),
+        "request_title": title,
+        "request_public": public,
+        "public_body": pb.get("name"),
+        "subject": proposed_subject,
+        "text": text,
+        "send_url": send_url,
+        "findings": _findings(findings),
+        "error_count": len(errs),
+        "passes": not errs,
+        "checks_performed": [
+            "R19 — salutation and closing formula present exactly once",
+            f"R04 — no placeholder {rules.PLACEHOLDER_MARKER!r} (U+2026)",
+            "R06 — no e-mail address and no IBAN in the text",
+            f"R01 — subject at most {rules.MAX_SUBJECT_LENGTH} characters",
+            f"R03 — text between {rules.MIN_BODY_LENGTH} and {rules.MAX_BODY_LENGTH} "
+            "characters",
+        ],
+        "address_warning": ADDRESS_CHECKBOX_WARNING,
+        "sent": False,
+        "written": False,
+        "path": None,
+        "next_steps": [
+            f"Open {send_url} in your browser.",
+            "Check that 'Adresse mitsenden' is NOT ticked.",
+            "Replace the prefilled text with the text above, subject included.",
+            "Read it once more, then press send yourself.",
+        ],
+        "note": (
+            "Nothing was sent and nothing can be: the API refuses to create e-mail "
+            "messages and the web view ignores OAuth tokens."
+        ),
+    }
+    if public:
+        result["next_steps"].insert(
+            1, "This request is PUBLIC — the message will be published under CC0.")
+
+    if path is not None:
+        draft = drafts.new_reply_draft(
+            request_id=int(request_id), request_title=title, request_slug=slug,
+            subject=proposed_subject, body=text, send_url=send_url,
+            request_url=req.get("site_url") or req.get("url"), request_public=public,
+            publicbody_id=pb.get("id"), publicbody_name=pb.get("name"),
+        )
+        draft["findings"] = result["findings"]
+        written = drafts.save(draft, path)
+        result["path"] = str(written)
+        result["written"] = True
+        result["suggested_confirmation_token"] = drafts.suggest_confirmation_token()
+
+    return _untrusted(result, "request_title", "public_body", "subject")
+
+
+def _slug_from_url(url: Any) -> str:
+    """Pull the request slug out of ``/anfrage/<slug>/``. Never guessed from the title."""
+    match = re.search(r"/anfrage/([^/?#]+)/", str(url or ""))
+    return match.group(1) if match else ""
+
+
 # ==========================================================================
 # RED — writes, hard-gated. dry_run defaults to True everywhere.
 # ==========================================================================
@@ -928,7 +1058,7 @@ __all__ = [
     "mcp", "run", "SubmitBlocked",
     "search_authorities", "get_authority", "get_law", "check_jurisdiction",
     "list_my_requests", "get_request", "get_messages", "list_attachments",
-    "download_attachment", "check_deadlines",
+    "download_attachment", "check_deadlines", "build_reply_draft",
     "create_request_draft", "validate_draft", "build_submit_url", "submit_request",
     "AuthRequired", "FdsError", "TruncatedResult", "WriteBlocked", "DraftError",
     "ThrottleExceeded",
