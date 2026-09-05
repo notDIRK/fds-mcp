@@ -25,6 +25,18 @@ from .errors import FdsMcpError
 
 READ_ONLY_METHODS = frozenset({"GET"})
 
+# Hosts this client may ever send an OAuth bearer token to. ``file_url`` on an
+# attachment and any absolute URL handed to ``request()`` come from the API response,
+# not from us, so they are checked against this list before the Authorization header is
+# attached. Without the check a single manipulated ``file_url`` would hand the user's
+# access token to a third party.
+ALLOWED_HOSTS = ("fragdenstaat.de", "media.frag-den-staat.de")
+
+
+def _host_allowed(url: str) -> bool:
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+    return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
+
 
 class FdsError(FdsMcpError):
     """Any failure while talking to fragdenstaat.de.
@@ -51,6 +63,10 @@ class WriteBlocked(FdsError):
 
 class AuthRequired(FdsError):
     """The call needs an OAuth token and none was available."""
+
+
+class ForeignHost(FdsError):
+    """A URL pointed somewhere other than fragdenstaat.de. Refused, never followed."""
 
 
 @dataclass
@@ -127,6 +143,11 @@ class FdsClient:
             raise AuthRequired(f"{method} {path} needs an OAuth token. Run: fds-mcp login")
 
         url = path if path.startswith("http") else f"{self.base}{path}"
+        if not _host_allowed(url):
+            raise ForeignHost(
+                f"{method} {url} refused: {ALLOWED_HOSTS} are the only hosts this client "
+                "talks to. Absolute URLs come out of API responses and are not trusted."
+            )
         headers: dict[str, str] = {"Accept": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -265,7 +286,18 @@ class FdsClient:
         return self.request("GET", "/user/")
 
     def download(self, url: str, target: Path) -> int:
-        """Stream a file to ``target``. Reading only — no gate needed."""
+        """Stream a file to ``target``. Reading only — no gate needed.
+
+        ``url`` normally comes from an attachment's ``file_url``, i.e. out of an API
+        response. It is checked against :data:`ALLOWED_HOSTS` before the bearer token is
+        attached; httpx additionally strips the Authorization header on a cross-origin
+        redirect, so the token cannot walk off the origin either way.
+        """
+        if not _host_allowed(url):
+            raise ForeignHost(
+                f"Refusing to download from {url}: not one of {ALLOWED_HOSTS}. "
+                "An attachment file_url pointing elsewhere would leak the access token."
+            )
         token = self._current_token()
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         written = 0

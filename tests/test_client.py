@@ -127,3 +127,51 @@ def test_a_long_body_exceeds_the_measured_url_limit():
     """Measured 2026-09-05: above ~4096 bytes fragdenstaat.de answers HTTP 400."""
     url = make_request_url(4929, "Betreff", "Angaben " * 700, law_type="IFG")
     assert len(url) > rules.MAX_PREFILL_URL_LENGTH
+
+
+# --------------------------------------------------------------------------
+# host allowlist: absolute URLs and attachment file_urls come out of API
+# responses, so they must not be able to redirect the bearer token elsewhere.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("url", [
+    "https://evil.example/steal",
+    "https://fragdenstaat.de.evil.example/steal",
+    "http://127.0.0.1:8080/",
+    "https://media.frag-den-staat.de.evil.example/x.pdf",
+])
+def test_request_refuses_a_foreign_absolute_url(url):
+    from fds_mcp.client import ForeignHost
+
+    with pytest.raises(ForeignHost):
+        FdsClient(token="SECRET").request("GET", url)
+
+
+@pytest.mark.parametrize("url", [
+    "https://evil.example/x.pdf",
+    "https://fragdenstaat.de@evil.example/x.pdf",
+])
+def test_download_refuses_a_foreign_file_url(tmp_path, url):
+    from fds_mcp.client import ForeignHost
+
+    with pytest.raises(ForeignHost):
+        FdsClient(token="SECRET").download(url, tmp_path / "out.bin")
+
+
+@pytest.mark.parametrize("url", [
+    "https://fragdenstaat.de/api/v1/request/1/",
+    "https://media.frag-den-staat.de/files/foi/1/x.pdf?token=abc",
+])
+def test_the_real_hosts_pass_the_allowlist(url):
+    from fds_mcp.client import _host_allowed
+
+    assert _host_allowed(url)
+
+
+def test_a_foreign_base_url_is_refused_too(tmp_path):
+    """base is a dataclass field; pointing it at an internal host must not work (SSRF)."""
+    from fds_mcp.client import ForeignHost
+
+    client = FdsClient(token="SECRET", base="http://169.254.169.254/latest/meta-data")
+    with pytest.raises(ForeignHost):
+        client.request("GET", "/iam/")
