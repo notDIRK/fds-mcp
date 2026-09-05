@@ -32,6 +32,11 @@ independent gates all agree — see [Safety model](#safety-model).
 
 ---
 
+## Documentation
+
+- [OAuth setup, with screenshots](docs/oauth-setup.md) — registering the application,
+  scopes, the redirect-URI rules, and what to do when the local HTTPS listener is blocked
+
 ## Installation
 
 ```bash
