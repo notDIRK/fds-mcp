@@ -161,9 +161,12 @@ def rule_placeholder(req: dict) -> list[Finding]:
 @offline_rule("R05-publicbody-set")
 def rule_publicbody(req: dict) -> list[Finding]:
     pb = req.get("publicbody") or {}
-    if not isinstance(pb.get("id"), int):
+    pb_id = pb.get("id")
+    # bool is a subclass of int, and YAML happily produces one from "yes"/"true".
+    # int(True) is 1, so without this the request would go to public body 1.
+    if not isinstance(pb_id, int) or isinstance(pb_id, bool):
         return [Finding("R05-publicbody-set", Level.ERROR,
-                        "No numeric publicbody.id set.")]
+                        f"publicbody.id must be a number, got {pb_id!r}.")]
     if not pb.get("ermittelt_ueber"):
         return [Finding("R05-publicbody-set", Level.WARN,
                         "publicbody.ermittelt_ueber is missing — responsibility is not "

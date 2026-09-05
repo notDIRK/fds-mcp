@@ -342,3 +342,52 @@ def test_gate_refusals_are_anticipated_tool_errors(tmp_path, submittable_draft):
     path = write(submittable_draft, tmp_path / "d.yaml")
     with pytest.raises(ToolError, match="Gate 1"):
         server.submit_request(path, "SEND-DEADBEEF", dry_run=True)
+
+
+# ==========================================================================
+# the gates must survive YAML type surprises and non-ASCII input
+# ==========================================================================
+
+def test_gate3_rejects_a_boolean_law_id(tmp_path, submittable_draft):
+    """YAML 'true' is a bool, and True == 1 in Python — the equality must not pass."""
+    submittable_draft["law"] = {"wunsch_id": 1, "wunsch_law_type": None,
+                                "api_default_id": True}
+    path = write(submittable_draft, tmp_path / "d.yaml")
+    with pytest.raises(SubmitBlocked, match="Gate 3"):
+        server.submit_request(path, "SEND-DEADBEEF", dry_run=True)
+
+
+def test_a_boolean_publicbody_id_is_an_error_not_public_body_1(tmp_path,
+                                                               submittable_draft):
+    from fds_mcp import rules
+
+    submittable_draft["publicbody"] = {"id": True, "ermittelt_ueber": "q"}
+    path = write(submittable_draft, tmp_path / "d.yaml")
+    with pytest.raises(SubmitBlocked, match="Gate 2"):
+        server.submit_request(path, "SEND-DEADBEEF", dry_run=True)
+    assert any(f.rule == "R05-publicbody-set"
+               for f in rules.errors(rules.run_offline(submittable_draft)))
+
+
+def test_gate4_reports_a_non_ascii_token_instead_of_crashing(tmp_path, submittable_draft):
+    """secrets.compare_digest() raises TypeError on non-ASCII str — that would reach the
+    client as 'Error executing tool', not as the gate's own refusal."""
+    submittable_draft["confirmation_token"] = "SEND-ÄÖÜ"
+    path = write(submittable_draft, tmp_path / "d.yaml")
+    with pytest.raises(SubmitBlocked, match="Gate 4"):
+        server.submit_request(path, "SEND-WRONG", dry_run=True)
+    result = server.submit_request(path, "SEND-ÄÖÜ", dry_run=True)
+    assert "confirmation" in result["gates_passed"]
+
+
+def test_oauth_state_check_survives_a_non_ascii_state(monkeypatch, capsys):
+    """A hostile callback URL must fail the state check with AuthError, not TypeError."""
+    import io
+
+    from fds_mcp import auth
+
+    monkeypatch.setenv("FDS_MCP_CLIENT_ID", "test-client")
+    monkeypatch.setattr("builtins.input",
+                        lambda *_: "fragdenstaat://callback?code=abc&state=%C3%84%C3%96")
+    with pytest.raises(auth.AuthError, match="state mismatch"):
+        auth.login(manual=True, open_browser=False, out=io.StringIO())

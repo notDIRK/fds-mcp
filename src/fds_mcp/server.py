@@ -728,6 +728,13 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
     # --- gate 3: the API cannot choose the legal basis ---------------------
     law = draft.get("law") or {}
     wunsch, api_default = law.get("wunsch_id"), law.get("api_default_id")
+    # YAML turns "yes"/"true" into a bool, and in Python True == 1. Without this check
+    # law: {wunsch_id: 1, api_default_id: true} would satisfy the equality below.
+    if isinstance(wunsch, bool) or isinstance(api_default, bool):
+        raise SubmitBlocked(
+            "Gate 3 (law): law.wunsch_id and law.api_default_id must be law ids, not "
+            "booleans. Quote the value or use a number."
+        )
     if wunsch is None or api_default is None:
         raise SubmitBlocked(
             "Gate 3 (law): law.wunsch_id and law.api_default_id must both be set. "
@@ -747,7 +754,11 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
             "Gate 4 (confirmation): the draft has no confirmation_token. A human must "
             "write one into the file; a tool must not invent it."
         )
-    if not secrets.compare_digest(stored, str(confirmation_token or "")):
+    # compare_digest() raises TypeError on str arguments containing non-ASCII, and a
+    # TypeError is not a ToolError -- the MCP client would see "Error executing tool"
+    # instead of the gate's own message. Compare bytes.
+    if not secrets.compare_digest(stored.encode("utf-8"),
+                                  str(confirmation_token or "").encode("utf-8")):
         raise SubmitBlocked(
             "Gate 4 (confirmation): the supplied confirmation_token does not match the "
             "one stored in the draft file."

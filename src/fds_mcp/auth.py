@@ -439,7 +439,10 @@ def login(*, manual: bool = False, open_browser: bool = True,
     if params.get("error"):
         raise AuthError(f"Authorization denied: {params['error']} "
                         f"{params.get('error_description', '')}".strip())
-    if not secrets.compare_digest(params.get("state", ""), state):
+    # bytes, not str: compare_digest() raises TypeError on non-ASCII str, and the state
+    # in the callback is whatever the redirect carried.
+    if not secrets.compare_digest(params.get("state", "").encode("utf-8"),
+                                  state.encode("utf-8")):
         raise AuthError("OAuth state mismatch — aborting (possible CSRF).")
     code = params.get("code")
     if not code:
