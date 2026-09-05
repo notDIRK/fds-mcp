@@ -14,7 +14,8 @@ Sources (froide @ bc6c2fa, 2026-09-03; fragdenstaat_de @ 88bfbba, 2026-09-04):
   froide/publicbody/models/foilaw.py:25   get_applicable_law: order_by("-meta", "-priority")
   fragdenstaat_de/settings/base.py:734    request_throttle / message_throttle
 
-Rule ids: R01-R17 run offline, L01-L05 need the network.
+Rule ids: R01-R18 run offline, L01-L06 need the network. ``B-*`` findings are the
+individual required elements checked by R18 and L06.
 """
 
 from __future__ import annotations
@@ -48,6 +49,16 @@ MESSAGE_THROTTLE = [(2, 5 * 60), (6, 6 * 3600), (8, 24 * 3600)]
 
 DRAFT_STATES = ("draft", "validated", "approved", "submitted")
 SUBMIT_METHODS = ("web_form", "api")
+
+# German salutations and closing formulae. Shared by R10 (which forbids them), R18 and
+# R19 (which require them) so that the three rules can never disagree about what a
+# greeting is. The German wording is what matters: froide's letter templates are German
+# and the text ends up next to them.
+SALUTATION_RE = re.compile(
+    r"(Sehr geehrte|Guten Tag|Guten Morgen|Hallo|Moin|Liebe[rs]?\s)")
+CLOSING_RE = re.compile(
+    r"(Mit freundlichen Gr|Freundliche Gr|Beste Gr|Mit besten Gr|Viele Gr|"
+    r"Herzliche Gr)")
 
 
 class Level(str, Enum):
@@ -237,16 +248,13 @@ def rule_no_salutation(req: dict) -> list[Finding]:
     body = _body(req)
     out = []
     head = "\n".join(body.strip().splitlines()[:3])
-    salutation = re.search(
-        r"(Sehr geehrte|Guten Tag|Guten Morgen|Hallo|Moin|Liebe[rs]?\s)", head)
+    salutation = SALUTATION_RE.search(head)
     if salutation:
         out.append(Finding("R10-no-salutation", Level.ERROR,
                            f"Body opens with a salutation ({salutation.group(1)!r}). "
                            "The law's letter_start already supplies one."))
     tail = "\n".join(body.strip().splitlines()[-4:])
-    closing = re.search(
-        r"(Mit freundlichen Gr|Freundliche Gr|Beste Gr|Mit besten Gr|Viele Gr|"
-        r"Herzliche Gr)", tail)
+    closing = CLOSING_RE.search(tail)
     if closing:
         out.append(Finding("R10-no-salutation", Level.ERROR,
                            f"Body ends with a closing formula ({closing.group(1)!r}). "
@@ -360,6 +368,109 @@ def rule_boilerplate_duplication(req: dict) -> list[Finding]:
     return []
 
 
+# --- required elements of the finished letter -----------------------------
+#
+# The question that matters is not "what is in the body" but "what does the authority
+# receive". With full_text=False froide wraps the body in the law's letter_start and
+# letter_end, so an element may come from the act's own template *or* from your text.
+# What gets checked is therefore the EFFECTIVE text, not the body.
+#
+# This exists because of a real miss: a request went out without any cost cap, because
+# the LTranspG letter_end does ask to be told the expected costs in advance but contains
+# neither a ceiling nor a fallback to free inspection on the premises. Every element
+# except this one was covered by the template, which is exactly why reading the body
+# alone found nothing.
+#
+# ``B-legal-basis`` is the only ERROR: a request that does not name its legal basis is
+# not an FOI request. The rest is diligence, and a human may knowingly skip it.
+
+REQUIRED_ELEMENTS: dict[str, tuple[Level, str, tuple[str, ...]]] = {
+    "legal-basis": (
+        Level.ERROR, "the legal basis the request is made under",
+        (r"nach\s+(?:dem|§)", r"§\s*\d", r"Transparenzgesetz",
+         r"\bIFG\b", r"\bUIG\b", r"\bVIG\b", r"LTranspG"),
+    ),
+    "cost-pre-notification": (
+        Level.WARN, "a request to be told the expected costs in advance",
+        (r"Verwaltungsaufwand", r"voraussichtlich\w*\s+Kosten",
+         r"Kosten\w*\s+vorab", r"vorab.{0,40}Kosten"),
+    ),
+    "cost-cap": (
+        Level.WARN, "a cost ceiling or a fee-waiver request",
+        (r"gebuehrenfrei", r"gebührenfrei", r"Gebuehrenbefreiung", r"Gebührenbefreiung",
+         r"ohne\s+meine\s+(?:ausdrueckliche|ausdrückliche)?\s*(?:vorherige\s+)?"
+         r"Zustimmung",
+         r"\b\d{1,4}\s*(?:Euro|EUR|€)"),
+    ),
+    "deadline": (
+        Level.WARN, "a reference to the statutory deadline",
+        (r"unverzueglich", r"unverzüglich", r"Monat", r"Frist", r"§\s*12"),
+    ),
+    "forwarding": (
+        Level.WARN, "a request to forward the case if the body is not responsible",
+        (r"nicht\s+zustaendig", r"nicht\s+zuständig", r"weiterzuleiten", r"weiterleiten"),
+    ),
+    "electronic-reply": (
+        Level.INFO, "a request for an electronic reply",
+        (r"elektronisch", r"E-Mail", r"per\s+Mail"),
+    ),
+}
+
+
+def effective_text(req: dict, letter_start: str = "", letter_end: str = "",
+                   name: str = "") -> str:
+    """What the authority actually receives.
+
+    Reproduces froide's ``construct_initial_message_body()``
+    (froide/foirequest/utils.py:213-225): with ``full_text=False`` the body is framed by
+    the law's ``letter_start`` and ``letter_end`` and the sender's name is appended; with
+    ``full_text=True`` only the name is appended and nothing else is added.
+    """
+    body = _body(req)
+    if req.get("full_text"):
+        return f"{body}\n{name}"
+    return f"{letter_start}\n\n{body}\n\n{letter_end}\n\n{name}"
+
+
+def check_required_elements(text: str, *, source: str) -> list[Finding]:
+    """Report every required element that ``text`` does not contain.
+
+    ``source`` names what was searched, so a finding says whether the element is missing
+    from the body alone or from the finished letter — those are very different claims.
+    """
+    out: list[Finding] = []
+    for key, (level, description, patterns) in REQUIRED_ELEMENTS.items():
+        if not any(re.search(pattern, text, re.I) for pattern in patterns):
+            out.append(Finding(f"B-{key}", level,
+                               f"The {source} does not contain {description}."))
+    return out
+
+
+@offline_rule("R18-full-text-self-contained")
+def rule_full_text_self_contained(req: dict) -> list[Finding]:
+    """With ``full_text=True`` there is no frame — the text has to carry everything.
+
+    froide then appends the sender's name and nothing else. Salutation, legal basis, cost
+    clause, deadline, forwarding request and closing formula all have to be in the text
+    itself. This is the exact inverse of R10, which forbids salutation and closing while
+    the frame is in play.
+    """
+    if not req.get("full_text"):
+        return []
+    body = _body(req)
+    out = check_required_elements(body, source="text (full_text=true, no frame)")
+    head = "\n".join(body.strip().splitlines()[:3])
+    if not SALUTATION_RE.search(head):
+        out.append(Finding("R18-full-text-self-contained", Level.ERROR,
+                           "full_text=true, but the text has no salutation. With "
+                           "full_text froide adds nothing but the name."))
+    tail = "\n".join(body.strip().splitlines()[-4:])
+    if not CLOSING_RE.search(tail):
+        out.append(Finding("R18-full-text-self-contained", Level.ERROR,
+                           "full_text=true, but the text has no closing formula."))
+    return out
+
+
 # --- live rules (need the network) ---------------------------------------
 
 @live_rule("L01-publicbody-exists")
@@ -447,6 +558,31 @@ def live_boilerplate_overlap(req: dict, client) -> list[Finding]:
                         f"{len(shared)} sentence(s) already appear verbatim in the letter "
                         f"frame of law {law_id}: {[s[:60] for s in sorted(shared)]}")]
     return []
+
+
+@live_rule("L06-required-elements")
+def live_required_elements(req: dict, client) -> list[Finding]:
+    """Check the FINISHED letter, not just your own text.
+
+    Fetches ``letter_start``/``letter_end`` of the chosen act and assembles what the
+    authority will receive. Elements the act's own template already supplies do not need
+    repeating — the ones nobody supplies are what shows up here. For the LTranspG (law
+    16) that is reliably the cost cap.
+
+    With ``full_text=True`` there is no frame to fetch and R18 has already checked the
+    same elements offline.
+    """
+    if req.get("full_text"):
+        return []
+    law = req.get("law") or {}
+    law_id = law.get("wunsch_id")
+    if law_id is None:
+        return []
+    data = client.get_law(law_id)
+    text = effective_text(req, data.get("letter_start") or "",
+                          data.get("letter_end") or "", "Firstname Lastname")
+    return check_required_elements(
+        text, source=f"finished letter under law {law_id} ({len(text)} characters)")
 
 
 def applicable_law(laws: list[dict]) -> dict:

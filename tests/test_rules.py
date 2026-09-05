@@ -189,8 +189,108 @@ def test_r17_duplicated_cost_clause_warns(valid_request):
 def test_every_registered_rule_has_a_unique_id():
     registered = [rid for rid, _fn in R.OFFLINE_RULES] + [rid for rid, _fn in R.LIVE_RULES]
     assert len(registered) == len(set(registered))
-    assert len(R.OFFLINE_RULES) == 17
-    assert len(R.LIVE_RULES) == 5
+    assert len(R.OFFLINE_RULES) == 18
+    assert len(R.LIVE_RULES) == 6
+
+
+# --- the required elements of the finished letter ------------------------
+#
+# letter_start / letter_end of law 16 (LTranspG Rheinland-Pfalz), fetched from
+# https://fragdenstaat.de/api/v1/law/16/ on 2026-09-05. Kept verbatim as a fixture so
+# that these tests state a fact about the act rather than about the network.
+
+LETTER_START_16 = "Antrag nach dem LTranspG\n\nGuten Tag, \n\nbitte senden Sie mir Folgendes zu:"
+LETTER_END_16 = (
+    "Dies ist ein Antrag auf Auskunft bzw. Einsicht nach § 2 Abs. 2 "
+    "Landestransparenzgesetz (LTranspG). \n\n"
+    "Sollte diese Anfrage wider Erwarten keine einfache Anfrage sein, bitte ich Sie "
+    "darum, mich vorab über den voraussichtlichen Verwaltungsaufwand sowie die "
+    "voraussichtlichen Kosten für die Akteneinsicht bzw. Aktenauskunft zu informieren.\n\n"
+    "Mit Verweis auf § 12 Abs. 3 Satz 1 LTranspG möchte ich Sie bitten, unverzüglich "
+    "über den Antrag zu entscheiden. Soweit Umweltinformationen betroffen sind, "
+    "verweise ich auf § 12 Abs. 3 Satz 2 Nr. 2 LTranspG und bitte Sie, mir die erbetenen "
+    "Informationen baldmöglichst, spätestens bis zum Ablauf eines Monats nach "
+    "Antragszugang zugänglich zu machen. \n\n"
+    "Sollten Sie für diesen Antrag nicht zuständig sein, bitte ich Sie, ihn an die "
+    "zuständige Behörde weiterzuleiten und mich darüber zu unterrichten. Ich "
+    "widerspreche ausdrücklich der Weitergabe meiner Daten an Dritte. \n\n"
+    "Ich bitte Sie um eine Antwort in elektronischer Form (E-Mail) und möchte Sie um "
+    "eine Empfangsbestätigung bitten. Vielen Dank für Ihre Mühe! \n\n"
+    "Mit freundlichen Grüßen"
+)
+
+
+def missing_elements(text):
+    return {f.rule for f in R.check_required_elements(text, source="test")}
+
+
+def test_the_letter_frame_covers_everything_except_the_cost_cap():
+    """The exact gap a real request fell through.
+
+    Law 16's letter_end asks to be told the costs in advance but never names a ceiling
+    and never falls back to free inspection on the premises. Reading the body alone
+    would have shown nothing, because the body was not where the omission was.
+    """
+    whole = R.effective_text({"body": "Bitte die Benutzungsordnung.", "full_text": False},
+                             LETTER_START_16, LETTER_END_16, "Firstname Lastname")
+    missing = missing_elements(whole)
+    assert "B-legal-basis" not in missing
+    assert "B-cost-pre-notification" not in missing
+    assert "B-deadline" not in missing
+    assert "B-forwarding" not in missing
+    assert "B-electronic-reply" not in missing
+    assert "B-cost-cap" in missing, "the act's own frame contains no cost ceiling"
+
+
+def test_a_cost_paragraph_closes_the_gap():
+    body = ("Bitte die Benutzungsordnung.\n\n"
+            "Zu den Kosten bitte ich um gebührenfreie Bearbeitung. Eine Bearbeitung, "
+            "die Kosten über 50 Euro auslöst, bitte ich ohne meine ausdrückliche "
+            "vorherige Zustimmung zu unterlassen.")
+    whole = R.effective_text({"body": body, "full_text": False},
+                             LETTER_START_16, LETTER_END_16, "Firstname Lastname")
+    assert "B-cost-cap" not in missing_elements(whole)
+
+
+def test_effective_text_adds_no_frame_with_full_text():
+    text = R.effective_text({"body": "Nur mein Text.", "full_text": True},
+                            LETTER_START_16, LETTER_END_16, "Firstname Lastname")
+    assert "Guten Tag" not in text and "§ 2 Abs. 2" not in text
+    assert text == "Nur mein Text.\nFirstname Lastname"
+
+
+def test_r18_full_text_without_salutation_or_closing_is_an_error(valid_request):
+    valid_request["full_text"] = True
+    valid_request["body"] = "Bitte senden Sie mir die Benutzungsordnung."
+    assert "R18-full-text-self-contained" in err_ids(R.run_offline(valid_request))
+
+
+def test_r18_does_not_apply_without_full_text(valid_request):
+    assert "R18-full-text-self-contained" not in ids(R.run_offline(valid_request))
+
+
+def test_r18_accepts_a_complete_self_contained_text(valid_request):
+    valid_request["full_text"] = True
+    valid_request["body"] = (
+        "Sehr geehrte Damen und Herren,\n\n"
+        "hiermit beantrage ich nach dem Landestransparenzgesetz (LTranspG) Zugang zu "
+        "der Benutzungsordnung.\n\n"
+        "Ich bitte um gebührenfreie Bearbeitung; eine Bearbeitung über 50 Euro bitte "
+        "ich ohne meine vorherige Zustimmung zu unterlassen. Bitte informieren Sie mich "
+        "vorab über den Verwaltungsaufwand und die voraussichtlichen Kosten.\n\n"
+        "Ich bitte gemäß § 12 Abs. 3 LTranspG um unverzügliche Entscheidung, spätestens "
+        "binnen eines Monats.\n\n"
+        "Sollten Sie nicht zuständig sein, bitte ich, den Antrag weiterzuleiten.\n\n"
+        "Ich bitte um Antwort in elektronischer Form.\n\n"
+        "Mit freundlichen Grüßen")
+    findings = R.run_offline(valid_request)
+    assert R.errors(findings) == [], "\n".join(str(f) for f in findings)
+
+
+def test_a_missing_legal_basis_is_the_only_error_level_element():
+    errors = {key for key, (level, _d, _p) in R.REQUIRED_ELEMENTS.items()
+              if level is R.Level.ERROR}
+    assert errors == {"legal-basis"}
 
 
 # --- 2. the shipped example draft ----------------------------------------
@@ -254,6 +354,14 @@ def test_live_duengenheim_belongs_to_vg_kaisersesch(client):
 
     pb = client.get_authority(4929)
     assert any(str(r).rstrip("/").endswith("/1899") for r in pb["regions"])
+
+
+@pytest.mark.live
+def test_live_l06_reports_the_missing_cost_cap_for_the_example_draft(example_draft, client):
+    """Against the live act, not against the fixture above — the frame may change."""
+    findings = R.live_required_elements(example_draft, client)
+    assert R.errors(findings) == [], "\n".join(str(f) for f in findings)
+    assert "B-cost-cap" in {f.rule for f in findings}
 
 
 @pytest.mark.live
