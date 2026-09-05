@@ -1,5 +1,9 @@
 # fds-mcp — FragDenStaat.de für KI-Assistenten
 
+**Ein [MCP](https://modelcontextprotocol.io)-Server für
+[FragDenStaat.de](https://fragdenstaat.de), die deutsche Informationsfreiheits-Plattform
+auf Basis von [froide](https://github.com/okfde/froide).**
+
 *[English version](README.md) — die englische Fassung ist die Quelle, diese hier folgt
 ihr.*
 
@@ -20,6 +24,12 @@ Informationsfreiheits-Plattform auf Basis von [froide](https://github.com/okfde/
 
 Vier davon brauchen **kein Konto und kein Token**: Behörden suchen, ein Gesetz lesen und
 ermitteln, wer für einen bestimmten Ort zuständig ist, funktioniert sofort.
+
+froide ist die Django-Software unter FragDenStaat.de, auf der auch andere Portale laufen.
+Dieser Server ist ausschließlich gegen **fragdenstaat.de** geschrieben und geprüft —
+`BASE_URL` steht fest in `src/fds_mcp/config.py`, eine Schwester-Instanz wie
+fragdenstaat.at ist damit heute nicht bedienbar. Die deutschen Rechtsprüfungen im
+Regelwerk liessen sich ohnehin nicht unverändert übertragen.
 
 ### Wie sich das anfühlt
 

@@ -1,5 +1,9 @@
 # fds-mcp — FragDenStaat.de for AI assistants
 
+**An [MCP](https://modelcontextprotocol.io) server for
+[FragDenStaat.de](https://fragdenstaat.de), the German freedom-of-information platform
+built on [froide](https://github.com/okfde/froide).**
+
 *[Deutsche Fassung](README.de.md)*
 
 **Prepare a German freedom-of-information request by asking for it in plain language.**
@@ -18,6 +22,11 @@ freedom-of-information platform built on [froide](https://github.com/okfde/froid
 
 Four of them need **no account and no token**: searching authorities, reading an act, and
 working out who is responsible for a given place all work straight away.
+
+froide is the Django software underneath FragDenStaat.de, and other portals run on it too.
+This server is written and tested against **fragdenstaat.de only** — `BASE_URL` is fixed in
+`src/fds_mcp/config.py`, so a sibling instance such as fragdenstaat.at is not usable today.
+The German legal reasoning in the rule set would not transfer unchanged either.
 
 ### What it looks like
 
