@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read-only, repository-wide. Deliberately NOT pull_request_target: this workflow
+# checks out and executes the contents of the pull request (pip install -e runs the
+# build backend), and pull_request_target would do that with a writable token and
+# access to repository secrets.
 permissions:
   contents: read
 
@@ -20,6 +24,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -37,9 +43,46 @@ jobs:
       - name: Run the offline test suite
         run: python -m pytest -m "not live" -v
 
-      - name: Check that no secret files are tracked
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # gitleaks scans every commit, not just the tip
+          persist-credentials: false
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.28.0
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
         run: |
-          if git ls-files | grep -E '(^|/)(tokens\.json|config\.json|\.env)$|\.(pem|key)$'; then
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Scan the whole git history
+        run: ./gitleaks git --redact --verbose --exit-code 1 .
+
+      - name: Scan the working tree
+        run: ./gitleaks dir --redact --verbose --exit-code 1 .
+
+      - name: Check that no secret-bearing file is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)(tokens\.json|config\.json|\.env)$|\.(pem|key|p12|pfx)$'; then
             echo "::error::A secret-bearing file is tracked in git."
+            exit 1
+          fi
+
+      - name: Check for private network addresses and internal hostnames
+        run: |
+          set -euo pipefail
+          pattern='(^|[^0-9.])(10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3})|\.intranet\.|\.internal\b|\.ts\.net\b'
+          # The workflow file is excluded because it contains the pattern itself.
+          if git grep -nEI "$pattern" -- . ':!*.png' ':!*.jpg' ':!.github/workflows/ci.yml'; then
+            echo "::error::An internal address or hostname reached the repository."
             exit 1
           fi
