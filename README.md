@@ -1,17 +1,35 @@
-# fds-mcp
+# fds-mcp — FragDenStaat.de for AI assistants
 
 *[Deutsche Fassung](README.de.md)*
 
-An [MCP](https://modelcontextprotocol.io) server for the
-[FragDenStaat.de](https://fragdenstaat.de) API — the German freedom-of-information
-platform built on [froide](https://github.com/okfde/froide).
+**Prepare a German freedom-of-information request by asking for it in plain language.**
+Your assistant finds the authority that has to answer and proves why it is the right one,
+names the act that applies and the deadline it sets, tracks the requests you already sent,
+collects the replies and their attachments, and writes a new request to a local file that
+you read before anything leaves your machine.
 
-It gives an AI assistant the *research and preparation* side of an FOI request: find the
-responsible authority and prove why it is responsible, read the applicable act and its
-deadline, track your own requests, collect the replies and their attachments, and draft a
-new request as a local file that you review before anything leaves your machine.
+### What is MCP, and what does it do here?
 
-Submitting is possible, but it is deliberately the hardest thing this server does.
+[MCP](https://modelcontextprotocol.io), the Model Context Protocol, is the standard that
+lets an AI assistant use outside tools — roughly what an extension does for a browser.
+`fds-mcp` is one such tool. Install it once and Claude, or any other MCP client, gains 15
+tools that speak to [FragDenStaat.de](https://fragdenstaat.de), the German
+freedom-of-information platform built on [froide](https://github.com/okfde/froide).
+
+Four of them need **no account and no token**: searching authorities, reading an act, and
+working out who is responsible for a given place all work straight away.
+
+### What it looks like
+
+> **You:** Who has to answer a freedom-of-information request about the city of Bonn, and
+> under which act?
+>
+> **The assistant** calls `check_jurisdiction("Bonn")`, gets the region chain and
+> `Kommunalverwaltung Bonn` (authority 3495), then `get_authority(3495)` for the acts that
+> apply and their deadlines — and reports the API URLs it used, so you can check the answer
+> instead of believing it.
+
+Submitting is possible too, but it is deliberately the hardest thing this server does.
 
 ---
 

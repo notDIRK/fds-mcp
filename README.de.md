@@ -1,17 +1,35 @@
-# fds-mcp
+# fds-mcp — FragDenStaat.de für KI-Assistenten
 
 *[English version](README.md) — die englische Fassung ist die Quelle, diese hier folgt
 ihr.*
 
-Ein [MCP](https://modelcontextprotocol.io)-Server für die API von
-[FragDenStaat.de](https://fragdenstaat.de), der deutschen Informationsfreiheits-Plattform
-auf Basis von [froide](https://github.com/okfde/froide).
+**Eine IFG-Anfrage vorbereiten, indem man sie in normalen Worten beschreibt.** Die
+Assistenz findet die Behörde, die antworten muss, und belegt, warum es die richtige ist,
+nennt das anwendbare Gesetz und die Frist, die es setzt, verfolgt Ihre laufenden Anfragen,
+sammelt Antworten und Anhänge ein und schreibt einen neuen Antrag in eine lokale Datei,
+die Sie lesen, bevor irgendetwas Ihren Rechner verlässt.
 
-Er gibt einer KI-Assistenz die *Recherche- und Vorbereitungsseite* einer IFG-Anfrage: die
-zuständige Behörde finden und belegen, warum sie zuständig ist, das anwendbare Gesetz und
-seine Frist lesen, eigene Anfragen verfolgen, Antworten und Anhänge einsammeln und einen
-neuen Antrag als lokale Datei entwerfen, die Sie prüfen, bevor irgendetwas Ihren Rechner
-verlässt.
+### Was ist MCP, und was tut es hier?
+
+[MCP](https://modelcontextprotocol.io), das Model Context Protocol, ist der Standard, über
+den eine KI-Assistenz fremde Werkzeuge benutzen kann — ungefähr das, was eine Erweiterung
+für einen Browser ist. `fds-mcp` ist so ein Werkzeug. Einmal eingerichtet, bekommt Claude
+oder ein beliebiger anderer MCP-Client 15 Werkzeuge, die mit
+[FragDenStaat.de](https://fragdenstaat.de) sprechen, der deutschen
+Informationsfreiheits-Plattform auf Basis von [froide](https://github.com/okfde/froide).
+
+Vier davon brauchen **kein Konto und kein Token**: Behörden suchen, ein Gesetz lesen und
+ermitteln, wer für einen bestimmten Ort zuständig ist, funktioniert sofort.
+
+### Wie sich das anfühlt
+
+> **Sie:** Wer muss eine Informationsfreiheitsanfrage zur Stadt Bonn beantworten, und nach
+> welchem Gesetz?
+>
+> **Die Assistenz** ruft `check_jurisdiction("Bonn")` auf, bekommt die Regionenkette und
+> die `Kommunalverwaltung Bonn` (Behörde 3495), dann `get_authority(3495)` für die
+> anwendbaren Gesetze und ihre Fristen — und nennt die benutzten API-URLs, damit Sie die
+> Antwort prüfen können, statt sie glauben zu müssen.
 
 Absenden ist möglich, aber absichtlich das Schwerste, was dieser Server tut.
 
