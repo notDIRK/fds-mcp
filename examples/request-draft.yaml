@@ -1,0 +1,61 @@
+# Example FragDenStaat request draft. NOTHING HAS BEEN SENT.
+#
+# State machine: draft -> validated -> approved -> submitted
+#   draft      the file exists, nothing checked
+#   validated  validate_draft() ran without ERROR findings
+#   approved   a HUMAN read the text and set this by hand
+#   submitted  set by submit_request() after a successful POST
+#
+# This example deliberately stays at "draft" and deliberately keeps the placeholder
+# confirmation token, so that submit_request() refuses it.
+status: draft
+
+meta:
+  slug: example-benutzungsordnung
+  created: 2026-09-05
+  generator: fds-mcp
+
+# Recipient. Established via /api/v1/publicbody/search/, not assumed.
+# Verified on 2026-09-05.
+publicbody:
+  id: 4929
+  name: Verbandsgemeindeverwaltung Kaisersesch
+  email: info@vg.kaisersesch.de
+  ermittelt_ueber: /api/v1/publicbody/search/?q=Kaisersesch
+
+# Legal basis.
+#   16 = Landestransparenzgesetz Rheinland-Pfalz (LTranspG), law_type IFG, 1 month
+#   18 = meta law "LTranspG, VIG" — what get_applicable_law() returns, and therefore
+#        what POST /api/v1/request/ would apply, because the serializer has no law_type.
+# wunsch_id != api_default_id, so this draft can only go out through the web form.
+law:
+  wunsch_id: 16
+  wunsch_law_type: IFG
+  api_default_id: 18
+
+submit_via: web_form
+
+public: true
+full_text: false   # froide frames the text with the law's letter_start / letter_end
+
+subject: Antrag nach dem Landestransparenzgesetz - Benutzungsordnung der Gemeindehalle
+
+# No salutation and no closing formula: with full_text=false froide adds both itself
+# (rule R10). Keep the text to the substance of the request.
+body: |
+  hiermit beantrage ich nach dem Landestransparenzgesetz Rheinland-Pfalz Zugang zu
+  folgenden Informationen:
+
+  1. Die derzeit gueltige Benutzungsordnung der Gemeindehalle einschliesslich aller
+     seit dem 01.01.2025 beschlossenen Aenderungen.
+
+  2. Die Gebuehren- bzw. Entgeltordnung, die fuer die Ueberlassung der Halle gilt.
+
+  3. Eine anonymisierte Uebersicht der Beschluesse, mit denen von den Regelungen der
+     Benutzungsordnung im Einzelfall abgewichen wurde.
+
+  Personenbezogene Daten einzelner Nutzerinnen und Nutzer sind fuer mich nicht von
+  Interesse und koennen geschwaerzt werden.
+
+# A human writes this. A tool must not invent it.
+confirmation_token: REPLACE-ME-BY-HAND
