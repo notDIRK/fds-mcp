@@ -1,0 +1,59 @@
+# --- secrets: never commit ---
+tokens.json
+config.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib60/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- virtualenvs ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- test / tooling ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# --- editors / OS ---
+.idea/
+.vscode/
+.DS_Store
+
+# --- local working data ---
+drafts/
+*.body.txt

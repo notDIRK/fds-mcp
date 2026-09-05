@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fds-mcp"
+version = "0.1.0"
+description = "MCP server for the FragDenStaat.de (froide) API — research and preparation for German freedom-of-information requests"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Dirk Wolbeck" }]
+keywords = ["mcp", "fragdenstaat", "froide", "foi", "ifg", "open-data", "transparency"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP",
+]
+dependencies = [
+  "mcp>=2.0.0",
+  "httpx>=0.24",
+  "pyyaml>=6.0",
+  "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.3",
+  "pytest-socket>=0.5",
+  "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/dwolbeck/fds-mcp"
+Issues = "https://github.com/dwolbeck/fds-mcp/issues"
+
+[project.scripts]
+fds-mcp = "fds_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fds_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "live: needs network access to fragdenstaat.de (run with: pytest -m live)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
