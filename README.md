@@ -6,6 +6,8 @@ built on [froide](https://github.com/okfde/froide).**
 
 *[Deutsche Fassung](README.de.md)*
 
+<!-- mcp-name: io.github.notDIRK/fds-mcp -->
+
 **Prepare a German freedom-of-information request by asking for it in plain language.**
 Your assistant finds the authority that has to answer and proves why it is the right one,
 names the act that applies and the deadline it sets, tracks the requests you already sent,
