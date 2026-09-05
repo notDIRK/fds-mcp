@@ -1,5 +1,7 @@
 # OAuth setup
 
+*[Deutsche Fassung](oauth-setup.de.md)*
+
 `fds-mcp` talks to fragdenstaat.de as **you**. There is no service account and no simple
 API key: the only programmatic path is an OAuth 2.0 application registered on your own
 account.
@@ -153,3 +155,13 @@ use its page under <https://fragdenstaat.de/account/applications/>.
 
 None of these belong in version control. The shipped `.gitignore` covers them, but they
 live outside the repository anyway.
+
+## What about the browser feature?
+
+`send_reply_via_browser` does **not** use OAuth. It cannot: the web view at
+`/anfrage/<slug>/send/message/` ignores bearer tokens entirely and answers HTTP 302 to
+`/account/login/` identically with and without one (measured 2026-09-05,
+`tests/test_api_contract.py`). The tool carries a logged-in browser session instead, from
+the profile `FDS_MCP_BROWSER_PROFILE` points at. That profile is a second, independent
+means of access to your account — treat it like a token, not like a cache. The risks are
+in the [README](../README.md#sending-replies).

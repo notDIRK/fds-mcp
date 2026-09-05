@@ -1,5 +1,7 @@
 # fds-mcp
 
+*[Deutsche Fassung](README.de.md)*
+
 An [MCP](https://modelcontextprotocol.io) server for the
 [FragDenStaat.de](https://fragdenstaat.de) API — the German freedom-of-information
 platform built on [froide](https://github.com/okfde/froide).
@@ -36,6 +38,8 @@ independent gates all agree — see [Safety model](#safety-model).
 
 - [OAuth setup, with screenshots](docs/oauth-setup.md) — registering the application,
   scopes, the redirect-URI rules, and what to do when the local HTTPS listener is blocked
+- [README.de.md](README.de.md) and [docs/oauth-setup.de.md](docs/oauth-setup.de.md) — the
+  same documents in German. US English is the source; the German version follows it.
 
 ## Installation
 
@@ -161,12 +165,18 @@ work, and everything else still does.
 | `list_attachments(message_id)` | 🟡 yellow | token, read only | none |
 | `download_attachment(attachment_id, target_dir)` | 🟡 yellow | token, read only | writes a local file |
 | `check_deadlines()` | 🟡 yellow | token, read only | none |
+| `build_reply_draft(request_id, text, subject=None, path=None)` | 🟡 yellow | token, read only | writes a local YAML file if `path` is given |
 | `create_request_draft(...)` | 🔴 red | none | writes a local YAML file, **no network at all** |
 | `validate_draft(path)` | 🔴 red | none | reads the API for L01–L05 |
 | `build_submit_url(path)` | 🔴 red | none | writes a local `.body.txt` sidecar |
 | `submit_request(path, confirmation_token)` | 🔴 red | token + `make:request` | **sends the request, irreversibly** |
+| `send_reply_via_browser(draft_path, confirmation_token)` | 🔴 red, **opt-in** | a logged-in browser profile | **sends the reply, irreversibly** |
 
 All four red tools take `dry_run: bool = True`.
+
+`send_reply_via_browser` is the sixteenth tool and is **not registered** unless
+`FDS_MCP_BROWSER_SEND=1` is set. Without that variable it does not appear in the tool
+list at all. Read [Sending replies](#sending-replies) before you switch it on.
 
 ### `check_jurisdiction` returns its evidence
 
@@ -190,12 +200,127 @@ These are frontend-only, with no REST equivalent. The server does not pretend ot
 
 - **replying to an authority** — `POST /api/v1/message/` only creates *postal* messages
   (`OnlyPostalMessagesWritable`), and `subject`/`content` are read-only serializer
-  fields. E-mail replies go through `/a/<slug>/send/message/`, a CSRF-protected Django
-  view;
+  fields. E-mail replies go through `/anfrage/<slug>/send/message/`, a CSRF-protected
+  Django view that ignores bearer tokens. See [Sending replies](#sending-replies);
 - **choosing the legal basis** — no `law_type` in the serializer;
 - **drafts** — `RequestDraft` is not registered in the API router;
 - setting status, resolution, tags or the law after the fact; publishing a request;
   filing an objection or escalating to the state information commissioner.
+
+---
+
+## Sending replies
+
+**An e-mail reply to an authority cannot be sent through the FragDenStaat API.** Not with
+a different payload, not with an extra scope, not with a better token. Three
+measurements, taken on 2026-09-05 and kept honest by `tests/test_api_contract.py`:
+
+1. `POST /api/v1/message/` with `kind: "email"` answers **HTTP 400** and reports, under
+   the key `kind`: *"Nachrichten dieser Art können nicht über die API erstellt werden."*
+   That is froide's `OnlyPostalMessagesWritable`.
+2. The identical call with `kind: "post"` also answers 400 — the probe deliberately
+   carries an unresolvable request URI, so nothing can be created either way — but it
+   carries **no `kind` error**. That is the calibration. Without it the first measurement
+   would prove nothing: a 400 could just as well come from the invalid URI, from the
+   endpoint refusing every POST, or from a missing scope.
+3. `POST https://fragdenstaat.de/anfrage/<slug>/send/message/` answers **HTTP 302 to
+   `/account/login/`** — identically with and without a bearer token, same status, same
+   `Location`. The web view is session + CSRF only. OAuth is not a way around point 1.
+
+So the honest answer is: a human sends the reply. `build_reply_draft` is what makes that
+short.
+
+### `build_reply_draft`
+
+Looks the request up, validates your text, and hands back the finished message, a subject
+in froide's own format (`AW: <title> [#<id>]`) and the URL of the form. It writes nothing
+to the network — there is no argument that makes it send.
+
+A follow-up is validated **differently from a request**, and the difference is easy to get
+wrong. froide frames a new request with the act's `letter_start`/`letter_end`; it does not
+frame a follow-up at all. The textarea arrives prefilled with
+
+```
+Guten Tag,
+
+…
+
+Mit freundlichen Grüßen
+<your name>
+```
+
+and exactly what stands in it is what the authority receives. Hence:
+
+- `R19` **requires** a salutation and a closing formula, each exactly once — the inverse
+  of `R10`, which forbids both while the frame is in play;
+- `R04` rejects the placeholder `…` (U+2026) that is sitting in that form right now. It
+  is the single most likely mistake on this path;
+- `R06` keeps e-mail addresses and IBANs out of a thread that is public and CC0;
+- the subject is capped at 230 characters.
+
+Every result carries one more warning, unconditionally: **the form has your postal
+address prefilled**, behind a checkbox labelled *"Adresse mitsenden"*. On a public request,
+ticking it publishes where you live, under CC0, permanently. Leave it unticked unless the
+authority has explicitly asked for your postal address.
+
+### `send_reply_via_browser` — optional, off by default
+
+There is a way to automate the last step anyway: drive the form in a browser that carries
+your logged-in session. This server can do that, and it is **not switched on**. It is
+registered only when `FDS_MCP_BROWSER_SEND=1` is set, and it needs an extra:
+
+```bash
+pip install 'fds-mcp[browser]'
+python -m playwright install chromium
+export FDS_MCP_BROWSER_SEND=1
+```
+
+It never composes text. It sends the `subject` and `body` of a reply draft file that
+`build_reply_draft` wrote and a human then approved — there is no other input it takes.
+Five gates:
+
+1. the file is a reply draft with `status: approved`, and `send_address` is false;
+2. no `ERROR` finding is open under the follow-up rules;
+3. `confirmation_token` matches, byte for byte, the token a human wrote into the file;
+4. the local ledger says another message stays inside `2/5min`, `6/6h`, `8/24h`. froide
+   does not enforce `message_throttle` on this path in a way we can rely on, so this
+   brake is voluntary;
+5. in the form itself: *"Adresse mitsenden"* is off, the recipient can be read and is
+   reported, subject and message read back byte for byte after being typed, no U+2026,
+   and exactly one salutation and one closing formula. Anything it cannot find, it treats
+   as a failure — a form that changed shape is a form it must not press buttons in.
+
+Afterwards it asks the API whether a new message actually exists on the request. If none
+does, the outcome is reported as `unconfirmed` and the draft is **not** marked sent.
+Unclear is not failure and it is not success.
+
+> [!WARNING]
+> **What you are accepting when you switch this on**
+>
+> 1. **Browser automation defeats the principle that a human performs the last action.**
+>    Every other exit in this server ends with a person clicking send. This one does not.
+>
+> 2. **Next to a general-purpose file-writing tool, gates 1 and 3 are not gates.** They
+>    are two values in a YAML file on your disk. No tool in *this* server can set either —
+>    `build_reply_draft` always writes `status: draft` and the placeholder token. But most
+>    MCP hosts also give the model a `write_file` tool, and a model that can write files
+>    can write `status: approved` and a token of its own choosing. Combine that with a
+>    prompt injection out of an authority's reply — text this server reads and labels as
+>    untrusted, but still puts in front of the model — and post to a public authority goes
+>    out with no human in the loop. It cannot be recalled.
+>
+> 3. **The browser carries a logged-in session of yours.** A malfunction acts with your
+>    full rights on fragdenstaat.de: your requests, your account pages, your address.
+>
+> 4. **Countermeasures**, in order of effectiveness:
+>    - leave the feature off. Unset `FDS_MCP_BROWSER_SEND` and the tool does not exist.
+>    - use a **separate browser profile** with no other logins, via
+>      `FDS_MCP_BROWSER_PROFILE`. The session in that profile is the blast radius.
+>    - put the draft directory **out of reach of your other tools** with
+>      `FDS_MCP_DRAFT_DIR`. Gates 1 and 3 are only worth something while nothing else can
+>      write that file.
+>    - keep `dry_run=True` in normal use. It fills the form and stops before the click.
+
 
 ---
 
@@ -217,13 +342,19 @@ Seven rules are enforced in code, not merely documented. Each has tests in
 7. The HTTP client refuses every non-GET method unless `allow_write=True` was set
    explicitly. Only one function in the package ever sets it.
 
+`send_reply_via_browser` has its own chain of five, listed under
+[Sending replies](#sending-replies), with tests in `tests/test_browser_send.py`. It also
+has a gate the others do not need: rule 0, *the tool is not registered at all* unless
+`FDS_MCP_BROWSER_SEND=1`.
+
 ### The rule set
 
-Offline rules `R01`–`R17` reproduce what froide's *web form* enforces — which is
-considerably more than the REST API validates. Live rules `L01`–`L05` check against the
+Offline rules `R01`–`R19` reproduce what froide's *web form* enforces — which is
+considerably more than the REST API validates. Live rules `L01`–`L06` check against the
 API: the authority exists and still has that name, the desired law is actually offered,
 the recomputed API default matches what the draft claims, no duplicate request exists,
-and no sentence of your text is already in the law's own letter template.
+no sentence of your text is already in the law's own letter template, and the finished
+letter contains every element it should.
 
 Notable ones:
 
@@ -234,6 +365,18 @@ Notable ones:
   either yourself sends a doubled greeting.
 - `R12` is an error for `submit_via: api` and only a hint for `submit_via: web_form` —
   the web form can choose the act, the API cannot.
+- `R18` and `L06` check **the letter the authority receives**, not the body you wrote.
+  With `full_text=false` the act's `letter_start`/`letter_end` supply part of the text, so
+  an element may come from either side; `L06` fetches the frame and reports what neither
+  half supplies. Six elements: legal basis (the only `ERROR`), cost pre-notification,
+  cost cap, deadline, forwarding when the body is not responsible, electronic reply.
+
+  The cost cap is why this exists. A real request went out without one, because the
+  LTranspG `letter_end` does ask to be told the expected costs but names no ceiling and no
+  fallback to free inspection on the premises. Everything else was covered by the
+  template, which is exactly why reading the body alone found nothing.
+- `R19` is the inverse of `R10` and applies only to follow-ups — see
+  [Sending replies](#sending-replies).
 
 ### Where the server is allowed to write
 
@@ -249,13 +392,15 @@ constrained rather than trusted:
 - attachments are only ever fetched from `fragdenstaat.de` and
   `media.frag-den-staat.de`, and the bearer token is never sent anywhere else.
 
-Two environment variables tighten this further, and are recommended whenever the server
+Four environment variables tighten this further, and are recommended whenever the server
 runs unattended:
 
 | Variable | Effect |
 | --- | --- |
 | `FDS_MCP_DRAFT_DIR` | every draft path must stay inside this directory (`:`-separated list) |
 | `FDS_MCP_DOWNLOAD_DIR` | every `download_attachment` target must stay inside this directory |
+| `FDS_MCP_BROWSER_SEND` | `1` registers `send_reply_via_browser`. Anything else, including unset, and the tool does not exist |
+| `FDS_MCP_BROWSER_PROFILE` | browser profile directory for that tool. Point it at a profile logged in to fragdenstaat.de **and nothing else** |
 
 Results that carry third-party text (`get_messages`, `get_request`,
 `list_attachments`, `download_attachment`) name those fields in an
@@ -267,6 +412,10 @@ or confirmation tokens.
 ```
 draft ──validate_draft──▶ validated ──a human edits the file──▶ approved ──submit_request──▶ submitted
 ```
+
+A reply draft has its own, ending in `sent` rather than `submitted`, and only
+`send_reply_via_browser` can reach that state — and only after the API has confirmed that
+a new message exists.
 
 Only a human moves a draft to `approved`, and only by editing the YAML file.
 
@@ -284,7 +433,10 @@ So, if you run this alongside a filesystem tool:
   `make:request` — then no token this server holds can ever POST a request;
 - or set `FDS_MCP_DRAFT_DIR` to a directory your other tools do not write to;
 - or leave the recommended exit in place and use `build_submit_url`, where the send
-  button is in your browser and not in a tool call.
+  button is in your browser and not in a tool call;
+- and leave `FDS_MCP_BROWSER_SEND` unset. The same reasoning applies to
+  `send_reply_via_browser`, one step more sharply: it has no scope you can withhold, only
+  a browser session you own.
 
 Gates 2, 3, 5 and 7 do not depend on the file and hold regardless: the rule set runs
 against live API data, the law check compares against the recomputed API default, the
@@ -298,11 +450,17 @@ in `submit_request`.
 ```bash
 pip install -e ".[dev]"
 python -m pytest -m "not live"     # offline suite
-python -m pytest -m live           # hits fragdenstaat.de, read-only GETs only
+python -m pytest -m live           # hits fragdenstaat.de
 ```
 
 Network access is blocked by default via `pytest-socket`; only tests marked `live` may
-reach `fragdenstaat.de`. **No test ever performs a write against the live site.**
+reach `fragdenstaat.de`.
+
+The live suite is read-only GETs with exactly two exceptions, both in
+`tests/test_api_contract.py`, both of which cannot create anything: the message POSTs
+carry an unresolvable request URI, and the web-form POST carries an empty body. **No test
+opens a browser and no test sends a message.** The tests that need a token skip, rather
+than fail, when `~/.config/fds-mcp/tokens.json` is absent.
 
 The CLI also works without an MCP client:
 

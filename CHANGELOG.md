@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`build_reply_draft`** (yellow): prepares a follow-up message to an authority — looks
+  the request up, validates the text, and returns the finished message, the subject in
+  froide's own format (`AW: <title> [#<id>]`) and the URL of the form. It sends nothing,
+  and there is no argument that makes it.
+- **Rule `R19-reply-needs-salutation`**, the inverse of `R10`. froide does not frame a
+  follow-up, so salutation and closing formula have to stand in the text, exactly once
+  each. The reply rule set also applies `R04` (the form is prefilled with U+2026), `R06`
+  and the 230-character subject cap.
+- **Rules `R18-full-text-self-contained` and `L06-required-elements`**, which check the
+  letter the authority *receives* rather than the body that was written: legal basis (the
+  only `ERROR`), cost pre-notification, cost cap, deadline, forwarding when not
+  responsible, electronic reply.
+- **`send_reply_via_browser`** (red, opt-in): sends an approved reply draft by driving a
+  real browser. Not registered unless `FDS_MCP_BROWSER_SEND=1`; needs the optional extra
+  `fds-mcp[browser]`. Five gates plus in-form checks, and an API confirmation afterwards —
+  without it the outcome is reported as `unconfirmed`, never as success. The README states
+  plainly what switching it on costs.
+- **`tests/test_api_contract.py`**: live learning tests that fire when FragDenStaat changes
+  the limits this server is built around — the `kind: "email"` refusal with its
+  `kind: "post"` calibration, the web view's indifference to bearer tokens, and the set of
+  resources the API router exposes.
+- **German documentation** alongside the English original: `README.de.md` and
+  `docs/oauth-setup.de.md`, linked in both directions. US English is the source.
+- Environment variables `FDS_MCP_BROWSER_SEND` and `FDS_MCP_BROWSER_PROFILE`.
+
 ## [0.1.0] — 2026-09-05
 
 First release.
