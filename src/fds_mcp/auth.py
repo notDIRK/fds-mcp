@@ -41,14 +41,11 @@ import httpx
 from . import config
 from .config import (
     ALLOWED_REDIRECT_SCHEMES,
-    AUTHORIZE_URL,
     DEFAULT_CALLBACK_HOST,
     DEFAULT_REDIRECT_URI,
     DEFAULT_SCOPES,
     FALLBACK_REDIRECT_URI,
-    REVOKE_URL,
     TOKEN_REFRESH_MARGIN,
-    TOKEN_URL,
     USER_AGENT,
 )
 from .errors import FdsMcpError
@@ -120,7 +117,7 @@ def load_client_config() -> ClientConfig:
     if not client_id:
         raise AuthError(
             "No OAuth client_id configured. Register an application at "
-            f"{config.REGISTER_APPLICATION_URL} (client type 'public', grant type "
+            f"{config.register_application_url()} (client type 'public', grant type "
             "'authorization-code', redirect URI "
             f"'{DEFAULT_REDIRECT_URI}') and then run:  fds-mcp configure --client-id <id>"
         )
@@ -239,7 +236,7 @@ def authorization_url(cfg: ClientConfig, challenge: str, state: str) -> str:
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
-    return f"{AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+    return f"{config.authorize_url()}?{urllib.parse.urlencode(params)}"
 
 
 # --------------------------------------------------------------------------
@@ -248,7 +245,7 @@ def authorization_url(cfg: ClientConfig, challenge: str, state: str) -> str:
 
 def _post_token(data: dict[str, str]) -> dict[str, Any]:
     try:
-        resp = httpx.post(TOKEN_URL, data=data, timeout=30.0,
+        resp = httpx.post(config.token_url(), data=data, timeout=30.0,
                           headers={"User-Agent": USER_AGENT})
     except httpx.HTTPError as exc:
         raise AuthError(f"Token endpoint unreachable: {exc}") from exc
@@ -297,7 +294,7 @@ def revoke(cfg: ClientConfig, tokens: Tokens) -> None:
     if cfg.client_secret:
         data["client_secret"] = cfg.client_secret
     try:
-        httpx.post(REVOKE_URL, data=data, timeout=30.0,
+        httpx.post(config.revoke_url(), data=data, timeout=30.0,
                    headers={"User-Agent": USER_AGENT})
     except httpx.HTTPError as exc:  # pragma: no cover - network path
         raise AuthError(f"Revocation endpoint unreachable: {exc}") from exc

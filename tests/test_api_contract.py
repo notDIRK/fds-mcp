@@ -38,18 +38,19 @@ import httpx
 import pytest
 import yaml
 
-from fds_mcp.config import API_URL, BASE_URL, USER_AGENT
+from fds_mcp import config
+from fds_mcp.config import USER_AGENT
 
 pytestmark = pytest.mark.live
 
 # A request id that does not exist. Its only job is to make the serializer invalid, so
 # that these POSTs can never create a message.
-NONEXISTENT_REQUEST_URI = f"{API_URL}/request/999999999/"
+NONEXISTENT_REQUEST_URI = f"{config.api_url()}/request/999999999/"
 
 # A real, public request of the maintainer's. Only the URL shape matters here: the view
 # under test redirects before it ever looks at the form data.
 SEND_MESSAGE_URL = (
-    f"{BASE_URL}/anfrage/antrag-nach-dem-landestransparenzgesetz-rheinland-pfalz-"
+    f"{config.base_url()}/anfrage/antrag-nach-dem-landestransparenzgesetz-rheinland-pfalz-"
     "vergabe-und-benutzung-der-schutzhuette-duengenheim/send/message/"
 )
 
@@ -108,7 +109,7 @@ def _headers(token: str | None = None) -> dict[str, str]:
 def _post_message(token: str, kind: str) -> httpx.Response:
     """POST /api/v1/message/ with a deliberately unresolvable request URI."""
     return httpx.post(
-        f"{API_URL}/message/",
+        f"{config.api_url()}/message/",
         json={"request": NONEXISTENT_REQUEST_URI, "kind": kind},
         headers=_headers(token),
         timeout=TIMEOUT,
@@ -210,7 +211,7 @@ def test_schema_resources_match_registered_routers():
     delta to allow for.
     """
     response = httpx.get(
-        f"{API_URL}/schema/",
+        f"{config.api_url()}/schema/",
         headers={"User-Agent": USER_AGENT,
                  "Accept": "application/vnd.oai.openapi+json, application/json"},
         timeout=TIMEOUT,
@@ -239,7 +240,7 @@ def test_schema_message_endpoint_still_has_no_email_path():
     resource has appeared to open one.
     """
     response = httpx.get(
-        f"{API_URL}/schema/",
+        f"{config.api_url()}/schema/",
         headers={"User-Agent": USER_AGENT,
                  "Accept": "application/vnd.oai.openapi+json, application/json"},
         timeout=TIMEOUT,

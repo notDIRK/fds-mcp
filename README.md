@@ -25,10 +25,27 @@ freedom-of-information platform built on [froide](https://github.com/okfde/froid
 Four of them need **no account and no token**: searching authorities, reading an act, and
 working out who is responsible for a given place all work straight away.
 
-froide is the Django software underneath FragDenStaat.de, and other portals run on it too.
-This server is written and tested against **fragdenstaat.de only** — `BASE_URL` is fixed in
-`src/fds_mcp/config.py`, so a sibling instance such as fragdenstaat.at is not usable today.
-The German legal reasoning in the rule set would not transfer unchanged either.
+### Other froide instances
+
+froide is the Django software underneath FragDenStaat.de, and its own README names a second
+production portal: fragdenstaat.at. Point this server at one with
+
+```bash
+export FDS_MCP_BASE_URL=https://fragdenstaat.at
+```
+
+Only `https` origins without a path or credentials are accepted, and the host allowlist that
+keeps the bearer token from following a link to a stranger is derived from this value — so
+with `.at` configured, `fragdenstaat.de` is a foreign host and is refused.
+
+What that buys you, measured against fragdenstaat.at on 2026-09-05 and kept as live tests:
+
+| | |
+|---|---|
+| `search_authorities`, `get_authority`, `get_law` | work, with no account |
+| `check_jurisdiction` | **cannot work there** — `/api/v1/georegion/` holds 0 rows on `.at` against 24,216 on `.de`. Nothing this client can fix |
+| the token-bound tools | need an OAuth application registered on that instance |
+| the pre-send rule set | encodes **German** FOI law and is not portable. Treat submitting through another instance as unverified |
 
 ### What it looks like
 

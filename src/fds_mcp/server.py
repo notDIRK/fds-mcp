@@ -27,7 +27,7 @@ from typing import Any
 
 from mcp.server import MCPServer
 
-from . import drafts, rules
+from . import config, drafts, rules
 from .client import (
     AuthRequired,
     FdsClient,
@@ -36,7 +36,6 @@ from .client import (
     WriteBlocked,
     make_request_url,
 )
-from .config import BASE_URL
 from .drafts import DraftError
 from .errors import FdsMcpError
 from .throttle import ThrottleExceeded, ThrottleLedger, message_ledger
@@ -145,7 +144,7 @@ def search_authorities(query: str, jurisdiction: str | None = None,
         "jurisdiction_filter": jurisdiction,
         "count": len(results),
         "results": results,
-        "source": f"{BASE_URL}/api/v1/publicbody/search/?q={query}",
+        "source": f"{config.base_url()}/api/v1/publicbody/search/?q={query}",
     }
 
 
@@ -194,7 +193,7 @@ def get_authority(id: int) -> dict:
             "api_default_law_* is what POST /api/v1/request/ would use. To file under a "
             "different act, use build_submit_url() with the desired law_type."
         ),
-        "source": f"{BASE_URL}/api/v1/publicbody/{pb['id']}/",
+        "source": f"{config.base_url()}/api/v1/publicbody/{pb['id']}/",
     }
 
 
@@ -222,7 +221,7 @@ def get_law(id: int) -> dict:
         "request_note": law.get("request_note"),
         "description": law.get("description"),
         "url": law.get("site_url") or law.get("url"),
-        "source": f"{BASE_URL}/api/v1/law/{law['id']}/",
+        "source": f"{config.base_url()}/api/v1/law/{law['id']}/",
     }
 
 
@@ -244,7 +243,7 @@ def check_jurisdiction(place_name: str, include_wider: bool = False) -> dict:
         include_wider: also list the authorities of the wider levels. Off by default —
             at country level that is thousands of bodies and tells you nothing.
     """
-    evidence: list[str] = [f"{BASE_URL}/api/v1/georegion/?name={place_name}"]
+    evidence: list[str] = [f"{config.base_url()}/api/v1/georegion/?name={place_name}"]
     with read_client() as client:
         regions = client.find_georegions(place_name)
         if not regions:
@@ -269,7 +268,7 @@ def check_jurisdiction(place_name: str, include_wider: bool = False) -> dict:
                     wider.append(step)
                     continue
                 bodies = client.authorities_for_region(step["id"])
-                evidence.append(f"{BASE_URL}/api/v1/publicbody/?regions={step['id']}")
+                evidence.append(f"{config.base_url()}/api/v1/publicbody/?regions={step['id']}")
                 if not bodies:
                     continue
                 if matched_level is None:
@@ -315,7 +314,7 @@ def _region_chain(client: FdsClient, region: dict, evidence: list[str]) -> list[
         parent_id = _id_from_uri(current.get("part_of") or "")
         if parent_id is None or parent_id in seen:
             break
-        evidence.append(f"{BASE_URL}/api/v1/georegion/{parent_id}/")
+        evidence.append(f"{config.base_url()}/api/v1/georegion/{parent_id}/")
         current = client.get_georegion(parent_id)
     return chain
 
@@ -376,7 +375,7 @@ def get_request(id: int) -> dict:
         "costs": req.get("costs"),
         "tags": req.get("tags"),
         "law": _law_ref(req.get("law")),
-        "source": f"{BASE_URL}/api/v1/request/{req['id']}/",
+        "source": f"{config.base_url()}/api/v1/request/{req['id']}/",
     })
     return _untrusted(summary, "title", "description", "summary", "refusal_reason",
                       "tags")
@@ -411,7 +410,7 @@ def get_messages(request_id: int) -> dict:
         "note": (
             "Replying to an authority is NOT possible through the API. "
             "POST /api/v1/message/ only creates postal messages. Use "
-            f"{BASE_URL}/a/<slug>/send/message/ in the browser."
+            f"{config.base_url()}/a/<slug>/send/message/ in the browser."
         ),
     }, "messages[].subject", "messages[].content", "messages[].sender")
 
@@ -598,7 +597,7 @@ def build_reply_draft(request_id: int, text: str, subject: str | None = None,
     reply = {"subject": proposed_subject, "body": text}
     findings = rules.run_reply(reply)
     errs = rules.errors(findings)
-    send_url = f"{BASE_URL}/anfrage/{slug}/#{REPLY_ANCHOR}"
+    send_url = f"{config.base_url()}/anfrage/{slug}/#{REPLY_ANCHOR}"
 
     result: dict[str, Any] = {
         "request_id": int(request_id),
@@ -1057,7 +1056,7 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
             "submitted": False,
             "gates_passed": ["status", "rules", "law", "confirmation", "throttle"],
             "law_route": law_plan["route"],
-            "would_post_to": f"{BASE_URL}/api/v1/request/",
+            "would_post_to": f"{config.base_url()}/api/v1/request/",
             "payload": plan,
             "findings": _findings(findings),
             "throttle": ledger.status(),
@@ -1240,10 +1239,10 @@ def send_reply_via_browser(draft_path: str, confirmation_token: str,
 
     request_id = int((draft.get("request") or {})["id"])
     send_url = str(draft.get("send_url") or "")
-    if not send_url.startswith(f"{BASE_URL}/anfrage/"):
+    if not send_url.startswith(f"{config.base_url()}/anfrage/"):
         raise ReplyBlocked(
             f"Gate 4 (target): send_url {send_url!r} does not point at a request on "
-            f"{BASE_URL}. Refusing to open it."
+            f"{config.base_url()}. Refusing to open it."
         )
 
     # --- gate 5: the form itself -------------------------------------------

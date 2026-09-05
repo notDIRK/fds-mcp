@@ -7,19 +7,116 @@ against https://fragdenstaat.de . Nothing is guessed.
 from __future__ import annotations
 
 import os
+import urllib.parse
 from pathlib import Path
 
-# --- endpoints (verified 2026-09-05) --------------------------------------
-BASE_URL = "https://fragdenstaat.de"
-API_URL = f"{BASE_URL}/api/v1"
+from .errors import FdsMcpError
 
-AUTHORIZE_URL = f"{BASE_URL}/account/authorize/"
-TOKEN_URL = f"{BASE_URL}/account/token/"
-REVOKE_URL = f"{BASE_URL}/account/revoke_token/"
-APPLICATIONS_URL = f"{BASE_URL}/account/applications/"
-REGISTER_APPLICATION_URL = f"{BASE_URL}/account/applications/register/"
 
-MAKE_REQUEST_FORM_URL = f"{BASE_URL}/anfrage-stellen/an/{{pb_id}}/"
+class ConfigError(FdsMcpError):
+    """The environment asks for something this server must not do."""
+
+
+# --- which instance ------------------------------------------------------
+# froide powers more than one public portal; its own README names the German and the
+# Austrian site. Everything here is measured against https://fragdenstaat.de , and that
+# stays the default, but the instance is a setting rather than a literal because the
+# read-only tools work unchanged against a sibling installation.
+#
+# It is deliberately a function and not a module constant. A constant is read once at
+# import time, which would make the value a matter of import order and would leave the
+# host guard below pointing at whatever was true first.
+DEFAULT_BASE_URL = "https://fragdenstaat.de"
+
+# Attachments on fragdenstaat.de are served from a separate host. That is a property of
+# that one deployment, not of froide, so it must not travel to another instance —
+# widening the host guard is exactly how a bearer token leaves for a stranger.
+DEFAULT_MEDIA_HOSTS = ("media.frag-den-staat.de",)
+
+
+def base_url() -> str:
+    """The froide instance to talk to. ``FDS_MCP_BASE_URL`` overrides the default.
+
+    Refuses anything the bearer token has no business reaching: a scheme other than
+    https, embedded credentials, a path, or a missing host.
+    """
+    raw = (os.environ.get("FDS_MCP_BASE_URL") or DEFAULT_BASE_URL).strip()
+    url = raw.rstrip("/")
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https":
+        raise ConfigError(
+            f"FDS_MCP_BASE_URL must use https, got {raw!r}. The bearer token is sent to "
+            "this host."
+        )
+    if not parts.hostname:
+        raise ConfigError(f"FDS_MCP_BASE_URL has no host: {raw!r}")
+    if parts.username or parts.password:
+        raise ConfigError(
+            "FDS_MCP_BASE_URL must not carry credentials. Put the token in the "
+            "keyring or FDS_TOKEN, never in a URL."
+        )
+    if parts.path or parts.query or parts.fragment:
+        raise ConfigError(
+            f"FDS_MCP_BASE_URL must be an origin without a path, got {raw!r}. Every "
+            "route in this client is appended to it."
+        )
+    return url
+
+
+def is_default_instance() -> bool:
+    """Are we talking to fragdenstaat.de itself?"""
+    return base_url() == DEFAULT_BASE_URL
+
+
+def api_url() -> str:
+    return f"{base_url()}/api/v1"
+
+
+def authorize_url() -> str:
+    return f"{base_url()}/account/authorize/"
+
+
+def token_url() -> str:
+    return f"{base_url()}/account/token/"
+
+
+def revoke_url() -> str:
+    return f"{base_url()}/account/revoke_token/"
+
+
+def applications_url() -> str:
+    return f"{base_url()}/account/applications/"
+
+
+def register_application_url() -> str:
+    return f"{base_url()}/account/applications/register/"
+
+
+def make_request_form_url(pb_id: object) -> str:
+    """The prefilled web form. The path is froide's, not a fragdenstaat.de theme detail —
+    verified 2026-09-05: fragdenstaat.at answers 200 on /anfrage-stellen/ and 404 on
+    /make-request/."""
+    return f"{base_url()}/anfrage-stellen/an/{pb_id}/"
+
+
+def media_hosts() -> tuple[str, ...]:
+    """Extra hosts that serve attachments, comma-separated in ``FDS_MCP_MEDIA_HOSTS``."""
+    raw = os.environ.get("FDS_MCP_MEDIA_HOSTS")
+    if raw:
+        return tuple(h.strip() for h in raw.split(",") if h.strip())
+    return DEFAULT_MEDIA_HOSTS if is_default_instance() else ()
+
+
+def allowed_hosts() -> tuple[str, ...]:
+    """Every host this client may send the bearer token to.
+
+    Derived from the configured instance, never a literal: an absolute URL out of an API
+    response is untrusted input, and the check that stops it has to move with the
+    setting or it stops meaning anything.
+    """
+    host = urllib.parse.urlsplit(base_url()).hostname or ""
+    return (host, *media_hosts())
+
 
 USER_AGENT = "fds-mcp/0.1 (+https://github.com/notDIRK/fds-mcp)"
 

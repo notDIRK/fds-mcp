@@ -20,7 +20,8 @@ from typing import Any
 
 import httpx
 
-from .config import API_URL, BASE_URL, USER_AGENT
+from . import config
+from .config import USER_AGENT
 from .errors import FdsMcpError
 
 READ_ONLY_METHODS = frozenset({"GET"})
@@ -30,12 +31,13 @@ READ_ONLY_METHODS = frozenset({"GET"})
 # not from us, so they are checked against this list before the Authorization header is
 # attached. Without the check a single manipulated ``file_url`` would hand the user's
 # access token to a third party.
-ALLOWED_HOSTS = ("fragdenstaat.de", "media.frag-den-staat.de")
 
 
 def _host_allowed(url: str) -> bool:
     host = (urllib.parse.urlparse(url).hostname or "").lower()
-    return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
+    allowed_hosts = config.allowed_hosts()
+    return any(host == allowed or host.endswith("." + allowed)
+               for allowed in allowed_hosts)
 
 
 class FdsError(FdsMcpError):
@@ -82,9 +84,15 @@ class FdsClient:
     token: str | None = field(default=None, repr=False)
     token_provider: Callable[[], str] | None = field(default=None, repr=False)
     allow_write: bool = False
-    base: str = API_URL
+    # Resolved per instance, not at import: a default evaluated when this module is
+    # first imported would freeze whatever FDS_MCP_BASE_URL happened to be then.
+    base: str | None = None
     timeout: float = 30.0
     _client: httpx.Client | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.base is None:
+            self.base = config.api_url()
 
     # ---------------- construction ----------------
 
@@ -145,7 +153,7 @@ class FdsClient:
         url = path if path.startswith("http") else f"{self.base}{path}"
         if not _host_allowed(url):
             raise ForeignHost(
-                f"{method} {url} refused: {ALLOWED_HOSTS} are the only hosts this client "
+                f"{method} {url} refused: {config.allowed_hosts()} are the only hosts this "
                 "talks to. Absolute URLs come out of API responses and are not trusted."
             )
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -289,13 +297,13 @@ class FdsClient:
         """Stream a file to ``target``. Reading only — no gate needed.
 
         ``url`` normally comes from an attachment's ``file_url``, i.e. out of an API
-        response. It is checked against :data:`ALLOWED_HOSTS` before the bearer token is
+        response. It is checked against :func:`config.allowed_hosts` before the bearer token is
         attached; httpx additionally strips the Authorization header on a cross-origin
         redirect, so the token cannot walk off the origin either way.
         """
         if not _host_allowed(url):
             raise ForeignHost(
-                f"Refusing to download from {url}: not one of {ALLOWED_HOSTS}. "
+                f"Refusing to download from {url}: not one of {config.allowed_hosts()}. "
                 "An attachment file_url pointing elsewhere would leak the access token."
             )
         token = self._current_token()
@@ -385,4 +393,4 @@ def make_request_url(pb_id: int, subject: str, body: str, *, law_type: str | Non
         params["ref"] = reference
     if tags:
         params["tags"] = tags
-    return f"{BASE_URL}/anfrage-stellen/an/{pb_id}/?{urllib.parse.urlencode(params)}"
+    return f"{config.base_url()}/anfrage-stellen/an/{pb_id}/?{urllib.parse.urlencode(params)}"

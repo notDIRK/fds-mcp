@@ -29,7 +29,7 @@ from .auth import (
     login as do_login,
 )
 from .client import FdsClient
-from .config import DEFAULT_REDIRECT_URI, DEFAULT_SCOPES, REGISTER_APPLICATION_URL
+from .config import DEFAULT_REDIRECT_URI, DEFAULT_SCOPES
 from .throttle import ThrottleLedger
 
 
@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_cfg = sub.add_parser(
         "configure",
         help="store the OAuth application data",
-        epilog=f"Register an application first at {REGISTER_APPLICATION_URL} "
+        epilog=f"Register an application first at {config.register_application_url()} "
                "(client type 'public', grant type 'authorization-code').",
     )
     p_cfg.add_argument("--client-id", required=True)

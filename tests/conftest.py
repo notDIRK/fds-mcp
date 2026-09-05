@@ -1,7 +1,8 @@
 """Shared fixtures.
 
 Network access is off by default. Tests marked ``live`` are the only ones allowed to
-talk to fragdenstaat.de, and only if pytest-socket is installed.
+talk to the froide instances in ``LIVE_HOSTS``, and only if pytest-socket is
+installed.
 """
 
 from __future__ import annotations
@@ -17,6 +18,11 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 EXAMPLE_DRAFT = ROOT / "examples" / "request-draft.yaml"
+
+# The froide instances a live test may reach. fragdenstaat.at is here because the
+# instance configuration is only proven by talking to a second one; resolved rather
+# than pinned, because both sit behind addresses that change.
+LIVE_HOSTS = ("fragdenstaat.de", "fragdenstaat.at")
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +99,7 @@ def client():
 
 @pytest.fixture(autouse=True)
 def _network_only_for_live_tests(request):
-    """pytest-socket blocks the network globally; ``live`` tests may reach fragdenstaat.de.
+    """pytest-socket blocks the network globally; ``live`` tests may reach LIVE_HOSTS.
 
     Kept from the prototype repo, including the deliberate absence of a
     ``disable_socket()`` in the teardown: pytest-socket resets its own state per test and
@@ -113,6 +119,11 @@ def _network_only_for_live_tests(request):
     import socket
 
     ps.enable_socket()
-    allowed = {info[4][0] for info in socket.getaddrinfo("fragdenstaat.de", 443)}
+    allowed = set()
+    for host in LIVE_HOSTS:
+        try:
+            allowed |= {info[4][0] for info in socket.getaddrinfo(host, 443)}
+        except OSError:  # a machine without DNS for one of them still runs the rest
+            continue
     ps.socket_allow_hosts(sorted(allowed), allow_unix_socket=True)
     yield

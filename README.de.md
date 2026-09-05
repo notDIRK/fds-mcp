@@ -25,11 +25,27 @@ Informationsfreiheits-Plattform auf Basis von [froide](https://github.com/okfde/
 Vier davon brauchen **kein Konto und kein Token**: Behörden suchen, ein Gesetz lesen und
 ermitteln, wer für einen bestimmten Ort zuständig ist, funktioniert sofort.
 
-froide ist die Django-Software unter FragDenStaat.de, auf der auch andere Portale laufen.
-Dieser Server ist ausschließlich gegen **fragdenstaat.de** geschrieben und geprüft —
-`BASE_URL` steht fest in `src/fds_mcp/config.py`, eine Schwester-Instanz wie
-fragdenstaat.at ist damit heute nicht bedienbar. Die deutschen Rechtsprüfungen im
-Regelwerk liessen sich ohnehin nicht unverändert übertragen.
+### Andere froide-Instanzen
+
+froide ist die Django-Software unter FragDenStaat.de, und froides eigenes README nennt ein
+zweites Produktivportal: fragdenstaat.at. Umstellen mit
+
+```bash
+export FDS_MCP_BASE_URL=https://fragdenstaat.at
+```
+
+Akzeptiert werden nur `https`-Origins ohne Pfad und ohne Zugangsdaten. Die Host-Liste, die
+verhindert, dass das Bearer-Token einem Link zu einem Fremdhost folgt, wird aus diesem Wert
+abgeleitet — mit `.at` konfiguriert ist `fragdenstaat.de` ein Fremdhost und wird abgelehnt.
+
+Was das bringt, am 2026-09-05 gegen fragdenstaat.at gemessen und als Live-Test festgehalten:
+
+| | |
+|---|---|
+| `search_authorities`, `get_authority`, `get_law` | funktionieren, ohne Konto |
+| `check_jurisdiction` | **kann dort nicht funktionieren** — `/api/v1/georegion/` hat auf `.at` 0 Einträge, auf `.de` 24.216. Nichts, was dieser Client beheben könnte |
+| die tokenpflichtigen Werkzeuge | brauchen eine dort registrierte OAuth-Anwendung |
+| das Regelwerk vor dem Versand | prüft **deutsches** Recht und ist nicht übertragbar. Absenden über eine andere Instanz gilt als ungeprüft |
 
 ### Wie sich das anfühlt
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from fds_mcp import rules
+from fds_mcp import config, rules
 from fds_mcp.client import (
     AuthRequired,
     FdsClient,
@@ -12,7 +12,6 @@ from fds_mcp.client import (
     TruncatedResult,
     make_request_url,
 )
-from fds_mcp.config import API_URL, BASE_URL
 
 
 class FakeClient(FdsClient):
@@ -33,7 +32,7 @@ def page(objects, limit=50):
 
 
 def test_base_url_is_the_documented_v1_endpoint():
-    assert FdsClient().base == API_URL == "https://fragdenstaat.de/api/v1"
+    assert FdsClient().base == config.api_url() == "https://fragdenstaat.de/api/v1"
 
 
 def test_paginate_stops_on_a_short_page():
@@ -101,7 +100,7 @@ def test_whoami_without_a_token_fails_before_the_network():
 
 def test_make_request_url_targets_the_form_and_carries_law_type():
     url = make_request_url(4929, "Betreff", "Text", law_type="IFG")
-    assert url.startswith(f"{BASE_URL}/anfrage-stellen/an/4929/?")
+    assert url.startswith(f"{config.base_url()}/anfrage-stellen/an/4929/?")
     assert "law_type=IFG" in url
     assert "hide_publicbody=1" in url
 
