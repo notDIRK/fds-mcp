@@ -846,6 +846,119 @@ def build_submit_url(path: str, dry_run: bool = True) -> dict:
     return out
 
 
+def _law_id_from_uri(uri: Any) -> int | None:
+    """Pull the numeric id out of a .../api/v1/law/<id>/ hyperlink."""
+    m = re.search(r"/law/(\d+)/?$", str(uri or ""))
+    return int(m.group(1)) if m else None
+
+
+def needs_law_lookup(draft: dict) -> bool:
+    """Does gate 3 have to talk to the API at all?
+
+    Only the narrowing route needs the two law objects. The direct route is decided from
+    the draft alone, so the common case makes no network call.
+    """
+    law = draft.get("law") or {}
+    wunsch, api_default = law.get("wunsch_id"), law.get("api_default_id")
+    if isinstance(wunsch, bool) or isinstance(api_default, bool):
+        return False
+    if wunsch is None or api_default is None:
+        return False
+    return wunsch != api_default and bool(law.get("narrow_after_submit"))
+
+
+def check_law_gate(draft: dict, client: Any = None) -> dict:
+    """Gate 3. Decide how — or whether — this draft may reach the API.
+
+    Two routes are allowed:
+
+    ``direct``
+        ``law.wunsch_id == law.api_default_id``. Nothing special happens.
+
+    ``narrow_after_submit``
+        The API cannot set ``law_type``, but it does not have to. Two measured facts
+        (2026-09-05) combine into a working path:
+
+        * ``full_text: true`` reduces the mail to body + name. ``letter_start`` and
+          ``letter_end`` of the meta act never reach the authority, and no statute is
+          cited anywhere else in the mail template.
+        * ``law`` is writable through ``PATCH /api/v1/request/<id>/``. froide has a
+          first-class feature for exactly this narrowing: ``ConcreteLawForm`` exists to
+          reduce a request filed under a meta act to one of its ``combined`` acts.
+
+        All four conditions must hold, and each is checked separately below.
+
+    Returns a dict with ``route`` and, for the narrowing route, the law ids involved.
+    Raises SubmitBlocked otherwise.
+    """
+    law = draft.get("law") or {}
+    wunsch, api_default = law.get("wunsch_id"), law.get("api_default_id")
+
+    # YAML turns "yes"/"true" into a bool, and in Python True == 1. Without this check
+    # law: {wunsch_id: 1, api_default_id: true} would satisfy the equality below.
+    if isinstance(wunsch, bool) or isinstance(api_default, bool):
+        raise SubmitBlocked(
+            "Gate 3 (law): law.wunsch_id and law.api_default_id must be law ids, not "
+            "booleans. Quote the value or use a number."
+        )
+    if wunsch is None or api_default is None:
+        raise SubmitBlocked(
+            "Gate 3 (law): law.wunsch_id and law.api_default_id must both be set. "
+            "get_authority() reports api_default_law_id."
+        )
+    if wunsch == api_default:
+        return {"route": "direct", "law_id_applied": api_default}
+
+    # --- the narrowing route -------------------------------------------------
+    if not law.get("narrow_after_submit"):
+        raise SubmitBlocked(
+            f"Gate 3 (law): desired law {wunsch} != API default {api_default}. "
+            "MakeRequestSerializer has no law_type field. Either use build_submit_url() "
+            "and let a human press send, or set law.narrow_after_submit: true in the "
+            "draft to file under the meta act with full_text and narrow afterwards."
+        )
+    if not draft.get("full_text"):
+        raise SubmitBlocked(
+            "Gate 3 (law): narrow_after_submit needs full_text: true. Without it froide "
+            f"wraps the body in letter_start/letter_end of act {api_default}, and that "
+            "wording reaches the authority even though the record is corrected later."
+        )
+
+    if client is None:  # pragma: no cover - guarded by needs_law_lookup()
+        raise SubmitBlocked(
+            "Gate 3 (law): the narrowing route needs to read both acts from the API, "
+            "but no client was available."
+        )
+    meta = client.get_law(int(api_default))
+    combined = {_law_id_from_uri(u) for u in (meta.get("combined") or [])}
+    combined.discard(None)
+    if wunsch not in combined:
+        raise SubmitBlocked(
+            f"Gate 3 (law): act {wunsch} is not in the combined set of act "
+            f"{api_default} ({sorted(combined) or 'empty'}). PATCH would accept it, but "
+            "ConcreteLawForm would not — that is the line between narrowing a meta act "
+            "and silently filing under an act that does not apply."
+        )
+
+    specific = client.get_law(int(wunsch))
+    same_deadline = (
+        meta.get("max_response_time") == specific.get("max_response_time")
+        and meta.get("max_response_time_unit") == specific.get("max_response_time_unit")
+    )
+    if not same_deadline:
+        raise SubmitBlocked(
+            f"Gate 3 (law): act {api_default} allows "
+            f"{meta.get('max_response_time')} {meta.get('max_response_time_unit')} but "
+            f"act {wunsch} allows {specific.get('max_response_time')} "
+            f"{specific.get('max_response_time_unit')}. due_date is computed at creation "
+            "from the default act and is NOT recalculated by the PATCH, so the stored "
+            "deadline would be wrong. Use build_submit_url() instead."
+        )
+
+    return {"route": "narrow_after_submit", "law_id_applied": api_default,
+            "law_id_after_patch": wunsch}
+
+
 @mcp.tool()
 def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> dict:
     """Actually POST the request to fragdenstaat.de. RED tier — IRREVERSIBLE.
@@ -896,26 +1009,12 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
         )
 
     # --- gate 3: the API cannot choose the legal basis ---------------------
-    law = draft.get("law") or {}
-    wunsch, api_default = law.get("wunsch_id"), law.get("api_default_id")
-    # YAML turns "yes"/"true" into a bool, and in Python True == 1. Without this check
-    # law: {wunsch_id: 1, api_default_id: true} would satisfy the equality below.
-    if isinstance(wunsch, bool) or isinstance(api_default, bool):
-        raise SubmitBlocked(
-            "Gate 3 (law): law.wunsch_id and law.api_default_id must be law ids, not "
-            "booleans. Quote the value or use a number."
-        )
-    if wunsch is None or api_default is None:
-        raise SubmitBlocked(
-            "Gate 3 (law): law.wunsch_id and law.api_default_id must both be set. "
-            "get_authority() reports api_default_law_id."
-        )
-    if wunsch != api_default:
-        raise SubmitBlocked(
-            f"Gate 3 (law): desired law {wunsch} != API default {api_default}. "
-            "MakeRequestSerializer has no law_type field, so the API would file this "
-            "request under the wrong act. Use build_submit_url() instead."
-        )
+    if needs_law_lookup(draft):
+        with read_client() as _law_client:
+            law_plan = check_law_gate(draft, _law_client)
+    else:
+        law_plan = check_law_gate(draft)
+    api_default = law_plan["law_id_applied"]
 
     # --- gate 4: the human-set confirmation token --------------------------
     stored = drafts.confirmation_token(draft)
@@ -947,13 +1046,17 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
         "tags": draft.get("tags") or [],
         "reference": draft.get("reference") or "",
         "law_id_that_will_be_applied": api_default,
+        "law_route": law_plan["route"],
     }
+    if law_plan["route"] == "narrow_after_submit":
+        plan["law_id_after_patch"] = law_plan["law_id_after_patch"]
     if dry_run:
         return {
             "path": str(target),
             "dry_run": True,
             "submitted": False,
             "gates_passed": ["status", "rules", "law", "confirmation", "throttle"],
+            "law_route": law_plan["route"],
             "would_post_to": f"{BASE_URL}/api/v1/request/",
             "payload": plan,
             "findings": _findings(findings),
@@ -976,10 +1079,46 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
         )
     ledger.record()
 
+    # --- second step of the narrowing route --------------------------------
+    # The mail is out. Filed under the meta act, but with full_text the authority never
+    # saw its wording. Correct the record now, and verify it — an unverified PATCH is
+    # reported as unconfirmed, never as done.
+    narrowing: dict[str, Any] | None = None
+    if law_plan["route"] == "narrow_after_submit":
+        target_law = law_plan["law_id_after_patch"]
+        narrowing = {"target_law_id": target_law, "confirmed": False}
+        slug = _slug_from_url((response or {}).get("url"))
+        try:
+            with write_client() as client:
+                found = client.find_request_by_slug(slug) if slug else None
+                if not found:
+                    narrowing["error"] = (
+                        f"could not resolve the new request from slug {slug!r}")
+                else:
+                    narrowing["request_id"] = found["id"]
+                    client.set_request_law(found["id"], target_law)
+                    after = client.get_request(found["id"])
+                    actual = (after.get("law") or {})
+                    actual_id = actual.get("id") if isinstance(actual, dict) else None
+                    if actual_id is None:
+                        actual_id = _law_id_from_uri(actual)
+                    narrowing["law_id_now"] = actual_id
+                    narrowing["confirmed"] = actual_id == target_law
+                    narrowing["due_date"] = after.get("due_date")
+        except Exception as exc:  # noqa: BLE001 - the mail is already sent, never re-raise
+            narrowing["error"] = f"{type(exc).__name__}: {exc}"
+        if not narrowing["confirmed"]:
+            narrowing["what_to_do"] = (
+                "The request was sent but the legal basis was NOT confirmed as changed. "
+                "Set it by hand at /anfrage/<slug>/set/law/ — the wording the authority "
+                "received is unaffected either way."
+            )
+
     draft["submitted"] = {
         "at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "url": (response or {}).get("url"),
-        "law_id_applied": api_default,
+        "law_id_applied": (narrowing or {}).get("law_id_now", api_default),
+        "law_narrowing": narrowing,
     }
     drafts.set_status(draft, "submitted")
     drafts.save(draft, target)
@@ -990,6 +1129,8 @@ def submit_request(path: str, confirmation_token: str, dry_run: bool = True) -> 
         "submitted": True,
         "response": response,
         "url": (response or {}).get("url"),
+        "law_route": law_plan["route"],
+        "law_narrowing": narrowing,
         "throttle": ledger.status(),
     }
 

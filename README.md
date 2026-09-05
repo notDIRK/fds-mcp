@@ -36,6 +36,8 @@ independent gates all agree — see [Safety model](#safety-model).
 
 ## Documentation
 
+- [What the API can and cannot do](docs/FINDINGS.md) — every limit we hit, how we
+  measured it, the dead ends we tried, and the mistakes we made along the way
 - [OAuth setup, with screenshots](docs/oauth-setup.md) — registering the application,
   scopes, the redirect-URI rules, and what to do when the local HTTPS listener is blocked
 - [README.de.md](README.de.md) and [docs/oauth-setup.de.md](docs/oauth-setup.de.md) — the

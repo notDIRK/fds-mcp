@@ -39,6 +39,8 @@ alle fünf unabhängigen Gates zustimmen — siehe [Sicherheitsmodell](#sicherhe
 
 ## Dokumentation
 
+- [Was die API kann und was nicht](docs/FINDINGS.de.md) — jede Grenze, an die wir
+  gestossen sind, wie wir sie gemessen haben, die Sackgassen und unsere eigenen Fehler
 - [OAuth-Einrichtung, mit Screenshots](docs/oauth-setup.de.md) — Anwendung registrieren,
   Scopes, die Regeln für die Redirect-URI und was zu tun ist, wenn der lokale
   HTTPS-Listener blockiert wird

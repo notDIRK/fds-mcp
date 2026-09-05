@@ -337,6 +337,31 @@ class FdsClient:
         return self.request("POST", "/request/", payload=payload)
 
 
+    def find_request_by_slug(self, slug: str) -> dict | None:
+        """Resolve a request by slug.
+
+        ``POST /request/`` returns only ``{"status", "url"}`` — no id. FoiRequestFilter
+        has ``slug`` in Meta.fields, so the slug is the way back to the object.
+        """
+        hits = self.list_requests(slug=slug, limit=2)
+        return hits[0] if hits else None
+
+    def set_request_law(self, req_id: int, law_id: int) -> dict:
+        """PATCH the legal basis of an existing request.
+
+        Verified writable on 2026-09-05: patching a non-existent law URI returns 400 with
+        a ``law`` key, which a read-only field would not do. froide's own equivalent is
+        ConcreteLawForm, which narrows a request filed under a meta act to one of its
+        combined acts.
+
+        Note that ``due_date`` is computed at creation and is NOT recalculated here.
+        """
+        return self.request(
+            "PATCH", f"/request/{int(req_id)}/",
+            payload={"law": f"{self.base}/law/{int(law_id)}/"},
+        )
+
+
 def make_request_url(pb_id: int, subject: str, body: str, *, law_type: str | None = None,
                      public: bool = True, hide_publicbody: bool = True,
                      reference: str = "", tags: str = "") -> str:
