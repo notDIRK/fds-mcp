@@ -55,13 +55,24 @@ Choose `Confidential` only for a server-side deployment where you can protect th
 ```bash
 fds-mcp configure \
   --client-id <your client id> \
-  --redirect-uri "https://localhost:8765/callback" \
-  --scopes "read:user read:request make:request write:request write:message write:attachment"
+  --redirect-uri "https://localhost:8765/callback"
 ```
 
-Written to `~/.config/fds-mcp/config.json` with mode `0600`.
+That takes the default scopes — `read:user read:request make:request` — which is
+everything the tools in this repository actually call. Written to
+`~/.config/fds-mcp/config.json` with mode `0600`.
 
 ### Scopes
+
+**Grant the least you need.** A token is only as dangerous as its scopes, it lives for
+180 days, and it sits in a file that an MCP server reads on every call. Read-only usage
+needs `read:user read:request`; drop `make:request` and `submit_request` can never fire,
+whatever happens to the five gates.
+
+Do **not** add `write:request`, `write:message` or `write:attachment` "to be safe": no
+tool in this repository uses them (documenting postal mail is listed as a known
+limitation, not as a feature), so they would grant a capability nothing here needs. Add
+them only when you are building on top of this server and know why.
 
 | Scope | Needed for |
 |---|---|
@@ -69,11 +80,13 @@ Written to `~/.config/fds-mcp/config.json` with mode `0600`.
 | `read:profile`, `read:email` | richer `/api/v1/user/` response, optional |
 | `read:request` | `list_my_requests`, `get_request` on non-public requests |
 | `make:request` | `submit_request`, and the request viewset at all |
-| **`write:request`** | **easily missed:** `POST /api/v1/message/` calls `validate_request` → `can_write_foirequest()`, and `PATCH /request/{id}/` needs it on top of `make:request` |
-| `write:message` | documenting postal correspondence |
-| `write:attachment` | uploads via the tus endpoint |
+| `write:request` | *not used by this server.* `POST /api/v1/message/` calls `validate_request` → `can_write_foirequest()`, and `PATCH /request/{id}/` needs it on top of `make:request` — relevant only if you extend the server |
+| `write:message` | *not used by this server.* documenting postal correspondence |
+| `write:attachment` | *not used by this server.* uploads via the tus endpoint |
 
-Ask only for what you use. Read-only usage needs just `read:user read:request`.
+The screenshot of the consent screen further down was taken while trying out the full
+scope list; it therefore shows more permissions than `fds-mcp configure` asks for by
+default. Yours should be shorter.
 
 ## 3. Log in
 
