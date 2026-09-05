@@ -23,7 +23,12 @@ def registered_tools():
 
 def test_all_fifteen_tools_are_registered():
     """The browser sender is deliberately absent: it needs FDS_MCP_BROWSER_SEND=1."""
-    assert {tool.name for tool in registered_tools()} == set(GREEN + YELLOW + RED)
+    from fds_mcp.server import BROWSER_SEND_REGISTERED
+
+    expected = set(GREEN + YELLOW + RED)
+    if BROWSER_SEND_REGISTERED:  # the operator switched the opt-in tool on
+        expected.add("send_reply_via_browser")
+    assert {tool.name for tool in registered_tools()} == expected
     assert len(GREEN + YELLOW + RED) == 15
 
 

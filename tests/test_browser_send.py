@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import time
 
 import pytest
@@ -112,9 +113,16 @@ def write(draft, tmp_path, name="reply.yaml"):
 # ==========================================================================
 
 def test_gate0_the_tool_is_absent_from_the_tool_list_by_default():
+    """Registration is decided at import time, so this reads the actual environment.
+
+    On a machine that deliberately has FDS_MCP_BROWSER_SEND=1 the tool is there, and the
+    invariant that still has to hold is that the list and the flag agree.
+    """
     names = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
-    assert "send_reply_via_browser" not in names
-    assert server.BROWSER_SEND_REGISTERED is False
+    assert ("send_reply_via_browser" in names) is server.BROWSER_SEND_REGISTERED
+    if os.environ.get("FDS_MCP_BROWSER_SEND") != "1":
+        assert server.BROWSER_SEND_REGISTERED is False
+        assert "send_reply_via_browser" not in names
 
 
 def test_gate0_registration_needs_the_environment_variable(monkeypatch):
