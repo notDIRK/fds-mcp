@@ -98,3 +98,57 @@ def test_body_file_sits_next_to_the_draft(tmp_path):
 def test_prefill_too_long_uses_the_measured_limit():
     assert drafts.prefill_too_long("x" * (rules.MAX_PREFILL_URL_LENGTH + 1))
     assert not drafts.prefill_too_long("x" * rules.MAX_PREFILL_URL_LENGTH)
+
+
+# --------------------------------------------------------------------------
+# path hardening: draft paths are MCP tool arguments, i.e. model-controlled,
+# and the model reads third-party content (authority replies, attachments).
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("name", [
+    ".bashrc", "profile", "authorized_keys", "crontab", "x.desktop", "x.sh", "x.txt",
+])
+def test_save_refuses_a_path_that_is_not_a_yaml_draft(tmp_path, valid_request, name):
+    with pytest.raises(drafts.DraftError, match="must end in"):
+        drafts.save(valid_request, tmp_path / name)
+
+
+def test_load_refuses_a_path_that_is_not_a_yaml_draft(tmp_path):
+    victim = tmp_path / ".bashrc"
+    victim.write_text("echo hi\n")
+    with pytest.raises(drafts.DraftError, match="must end in"):
+        drafts.load(victim)
+
+
+def test_save_refuses_to_clobber_a_foreign_yaml_file(tmp_path, valid_request):
+    victim = tmp_path / "docker-compose.yml"
+    victim.write_text("services:\n  db:\n    image: postgres\n")
+    with pytest.raises(drafts.DraftError, match="does not look like an fds-mcp draft"):
+        drafts.save(valid_request, victim)
+    assert "postgres" in victim.read_text()
+
+
+def test_save_may_overwrite_its_own_draft(tmp_path, valid_request):
+    path = drafts.save(valid_request, tmp_path / "d.yaml")
+    valid_request["subject"] = "Antrag nach dem LTranspG - zweite Fassung"
+    assert drafts.save(valid_request, path) == path
+
+
+def test_a_symlink_is_judged_by_its_target(tmp_path, valid_request):
+    victim = tmp_path / ".bashrc"
+    victim.write_text("echo hi\n")
+    link = tmp_path / "innocent.yaml"
+    link.symlink_to(victim)
+    with pytest.raises(drafts.DraftError, match="must end in"):
+        drafts.save(valid_request, link)
+    assert victim.read_text() == "echo hi\n"
+
+
+def test_draft_dir_confinement_is_enforced_when_configured(tmp_path, valid_request,
+                                                           monkeypatch):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    monkeypatch.setenv("FDS_MCP_DRAFT_DIR", str(allowed))
+    drafts.save(valid_request, allowed / "ok.yaml")
+    with pytest.raises(drafts.DraftError, match="outside FDS_MCP_DRAFT_DIR"):
+        drafts.save(valid_request, tmp_path / "escaped.yaml")
