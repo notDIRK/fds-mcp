@@ -28,6 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Only needed for send_reply_via_browser, which is itself only registered when
+# FDS_MCP_BROWSER_SEND=1. Nothing else in this package opens a browser.
+browser = [
+  "playwright>=1.40",
+]
 dev = [
   "pytest>=7.3",
   "pytest-socket>=0.5",
