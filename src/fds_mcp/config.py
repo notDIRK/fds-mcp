@@ -21,7 +21,7 @@ REGISTER_APPLICATION_URL = f"{BASE_URL}/account/applications/register/"
 
 MAKE_REQUEST_FORM_URL = f"{BASE_URL}/anfrage-stellen/an/{{pb_id}}/"
 
-USER_AGENT = "fds-mcp/0.1 (+https://github.com/dwolbeck/fds-mcp)"
+USER_AGENT = "fds-mcp/0.1 (+https://github.com/notDIRK/fds-mcp)"
 
 # --- OAuth ----------------------------------------------------------------
 # OAUTH2_PROVIDER.ALLOWED_REDIRECT_URI_SCHEMES on fragdenstaat.de is exactly

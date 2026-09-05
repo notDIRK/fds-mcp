@@ -46,13 +46,13 @@ independent gates all agree — see [Safety model](#safety-model).
 ## Installation
 
 ```bash
-pip install git+https://github.com/dwolbeck/fds-mcp.git
+pip install git+https://github.com/notDIRK/fds-mcp.git
 ```
 
 Or from a checkout:
 
 ```bash
-git clone https://github.com/dwolbeck/fds-mcp.git
+git clone https://github.com/notDIRK/fds-mcp.git
 cd fds-mcp
 pip install -e ".[dev]"
 ```

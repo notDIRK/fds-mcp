@@ -75,4 +75,4 @@ choosing the legal basis via `POST /api/v1/request/`, server-side drafts, and se
 status, resolution, tags or the law after the fact. Documenting postal mail (tus upload
 plus `kind: post`) is possible through the API but is not implemented yet.
 
-[0.1.0]: https://github.com/dwolbeck/fds-mcp/releases/tag/v0.1.0
+[0.1.0]: https://github.com/notDIRK/fds-mcp/releases/tag/v0.1.0

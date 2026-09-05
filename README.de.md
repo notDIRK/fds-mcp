@@ -50,13 +50,13 @@ alle fünf unabhängigen Gates zustimmen — siehe [Sicherheitsmodell](#sicherhe
 ## Installation
 
 ```bash
-pip install git+https://github.com/dwolbeck/fds-mcp.git
+pip install git+https://github.com/notDIRK/fds-mcp.git
 ```
 
 Oder aus einem Checkout:
 
 ```bash
-git clone https://github.com/dwolbeck/fds-mcp.git
+git clone https://github.com/notDIRK/fds-mcp.git
 cd fds-mcp
 pip install -e ".[dev]"
 ```

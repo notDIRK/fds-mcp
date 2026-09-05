@@ -28,7 +28,7 @@ Klicken Sie auf *Neue Anwendung* / *Register new application*:
 |---|---|---|
 | **Name** | `fds-mcp` | wird auf dem Zustimmungsdialog angezeigt |
 | **Description** | beliebig | wird auf dem Zustimmungsdialog angezeigt |
-| **Homepage** | Ihr Fork oder `https://github.com/dwolbeck/fds-mcp` | |
+| **Homepage** | Ihr Fork oder `https://github.com/notDIRK/fds-mcp` | |
 | **Redirect URIs** | `https://localhost:8765/callback`<br>`fragdenstaat://callback` | eine pro Zeile; registrieren Sie **beide** — siehe Schritt 3 |
 | **Client type** | `Public` | erzwingt PKCE und macht das Client-Secret gegenstandslos |
 | **Authorization grant type** | `Authorization code` | der einzige Flow, der für Nutzerdaten funktioniert |

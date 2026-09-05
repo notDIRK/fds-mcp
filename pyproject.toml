@@ -40,8 +40,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dwolbeck/fds-mcp"
-Issues = "https://github.com/dwolbeck/fds-mcp/issues"
+Homepage = "https://github.com/notDIRK/fds-mcp"
+Issues = "https://github.com/notDIRK/fds-mcp/issues"
 
 [project.scripts]
 fds-mcp = "fds_mcp.cli:main"
